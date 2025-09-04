@@ -7,10 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ----------------- Shared Logic -----------------
-# ----------------- Shared Logic -----------------
+
 def document_qa(page_name: str):
-    # Access the API key
+    
     openai_api_key = os.getenv("OPENAI_API_KEY")
     api_key_valid = False
     client = None
@@ -88,7 +87,7 @@ def document_qa(page_name: str):
                 st.warning("The document appears to be empty or unreadable.")
                 st.stop()
 
-            # --- Sidebar controls ---
+            
             st.sidebar.header("Summary Options")
 
             summary_type = st.sidebar.radio(
@@ -103,7 +102,7 @@ def document_qa(page_name: str):
             use_advanced = st.sidebar.checkbox("Use Advanced Model (4o)")
             model = "gpt-4o" if use_advanced else "gpt-4o-mini"
 
-            # --- Generate Summary ---
+            
             st.subheader(f"Summary using {model}")
             try:
                 messages = [
@@ -123,14 +122,12 @@ def document_qa(page_name: str):
             except Exception as e:
                 st.error(f"An error occurred while generating summary: {str(e)}")
 
-# ----------------- Page Functions -----------------
 def lab1():
     document_qa("Lab 1")
 
 def lab2():
     document_qa("Lab 2")
 
-# ----------------- Navigation -----------------
 pg = st.navigation(
     {
         "Labs": [
