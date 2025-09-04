@@ -1,53 +1,119 @@
 import streamlit as st
 from openai import OpenAI
+import PyPDF2
+from io import BytesIO
 
-# Show title and description.
-st.title("📄 Document question answering")
-st.write(
-    "Upload a document below and ask a question about it – GPT will answer! "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-)
+# ---------- Shared Logic (document QA) ----------
+def document_qa_page(page_name: str):
+    st.title(f"📄 {page_name} – Document Question Answering")
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
-
-    # Let the user upload a file via `st.file_uploader`.
-    uploaded_file = st.file_uploader(
-        "Upload a document (.txt or .md)", type=("txt", "md")
+    st.write(
+        "Upload a document and ask a question – GPT will answer! "
+        "You need to provide an OpenAI API key from "
+        "[here](https://platform.openai.com/account/api-keys)."
     )
 
-    # Ask the user for a question via `st.text_area`.
-    question = st.text_area(
-        "Now ask a question about the document!",
-        placeholder="Can you give me a short summary?",
-        disabled=not uploaded_file,
-    )
+    openai_api_key = st.text_input("OpenAI API Key", type="password")
 
-    if uploaded_file and question:
+    api_key_valid = False
+    client = None
+    if not openai_api_key:
+        st.info("Please add your OpenAI API key to continue.", icon="🗝️")
+    else:
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            # test call
+            client.chat.completions.create(
+                model="gpt-5-chat-latest",
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=5,
+            )
+            api_key_valid = True
+            st.success("API key is valid!")
+        except Exception as e:
+            st.error(f"Invalid API key or API error: {str(e)}")
 
-        # Process the uploaded file and question.
-        document = uploaded_file.read().decode()
-        messages = [
-            {
-                "role": "user",
-                "content": f"Here's a document: {document} \n\n---\n\n {question}",
-            }
-        ]
-
-        # Generate an answer using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            stream=True,
+    if api_key_valid and client:
+        upload_file = st.file_uploader(
+            "Upload a document (.txt or .pdf)", type=("txt", "pdf")
         )
 
-        # Stream the response to the app using `st.write_stream`.
-        st.write_stream(stream)
+        if upload_file is None and "document_content" in st.session_state:
+            del st.session_state["document_content"]
+            del st.session_state["file_name"]
+            st.info("File data is cleared from memory")
+
+        if upload_file:
+            st.success(f"File loaded: {upload_file.name}")
+            st.session_state["file_name"] = upload_file.name
+        else:
+            st.info("No File uploaded")
+
+        question = st.text_area(
+            "Now ask a question about the document!",
+            placeholder="Is this course hard?",
+            disabled=not upload_file,
+        )
+
+        if upload_file and question:
+            document = ""
+
+            if (
+                "document_content" in st.session_state
+                and st.session_state.get("file_name") == upload_file.name
+            ):
+                document = st.session_state["document_content"]
+                st.info("Using cached document")
+            else:
+                try:
+                    file_extension = upload_file.name.split(".")[-1].lower()
+                    if file_extension == "txt":
+                        document = upload_file.read().decode()
+                    elif file_extension == "pdf":
+                        pdf_reader = PyPDF2.PdfReader(BytesIO(upload_file.read()))
+                        for page in pdf_reader.pages:
+                            document += (page.extract_text() or "") + "\n"
+                    else:
+                        st.error("Unsupported file type.")
+                        st.stop()
+
+                    st.session_state["document_content"] = document
+                    st.session_state["file_name"] = upload_file.name
+                    st.success("Document processed and cached.")
+                except Exception as e:
+                    st.error(f"Error reading file: {str(e)}")
+                    st.stop()
+
+            if not document.strip():
+                st.warning("The document appears to be empty or unreadable.")
+                st.stop()
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": f"Here's a document: {document}\n\n---\n\n {question}",
+                }
+            ]
+
+            try:
+                for model in ["gpt-3.5-turbo", "gpt-4.1", "gpt-5-chat-latest", "gpt-5-nano"]:
+                    st.subheader(model)
+                    stream = client.chat.completions.create(
+                        model=model, messages=messages, stream=True
+                    )
+                    st.write_stream(stream)
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
+
+
+# ---------- Navigation Setup ----------
+pg = st.navigation(
+    {
+        "Labs": [
+            st.Page(lambda: document_qa_page("Lab 1"), title="Lab 1"),
+            st.Page(lambda: document_qa_page("Lab 2"), title="Lab 2"),
+        ]
+    }
+)
+
+pg.run()
