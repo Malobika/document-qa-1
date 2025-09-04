@@ -3,9 +3,9 @@ from openai import OpenAI
 import PyPDF2
 from io import BytesIO
 
-# ---------- Shared Logic (document QA) ----------
-def document_qa_page(page_name: str):
-    st.title(f"📄 {page_name} – Document Question Answering")
+# ----------------- Shared Logic -----------------
+def document_qa(page_name: str):
+    st.title(f"📄 {page_name} – Document Q&A")
 
     st.write(
         "Upload a document and ask a question – GPT will answer! "
@@ -13,16 +13,17 @@ def document_qa_page(page_name: str):
         "[here](https://platform.openai.com/account/api-keys)."
     )
 
+    # API key input
     openai_api_key = st.text_input("OpenAI API Key", type="password")
-
     api_key_valid = False
     client = None
+
     if not openai_api_key:
         st.info("Please add your OpenAI API key to continue.", icon="🗝️")
     else:
         try:
             client = OpenAI(api_key=openai_api_key)
-            # test call
+            # simple validation
             client.chat.completions.create(
                 model="gpt-5-chat-latest",
                 messages=[{"role": "user", "content": "Hi"}],
@@ -106,12 +107,20 @@ def document_qa_page(page_name: str):
                 st.error(f"An error occurred: {str(e)}")
 
 
-# ---------- Navigation Setup ----------
+# ----------------- Page Functions -----------------
+def lab1():
+    document_qa("Lab 1")
+
+def lab2():
+    document_qa("Lab 2")
+
+
+# ----------------- Navigation -----------------
 pg = st.navigation(
     {
         "Labs": [
-            st.Page(lambda: document_qa_page("Lab 1"), title="Lab 1"),
-            st.Page(lambda: document_qa_page("Lab 2"), title="Lab 2"),
+            st.Page(lab1, title="Lab 1"),
+            st.Page(lab2, title="Lab 2"),
         ]
     }
 )
