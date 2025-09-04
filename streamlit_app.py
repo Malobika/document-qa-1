@@ -8,26 +8,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ----------------- Shared Logic -----------------
-
+def document_qa(page_name: str):
     
 
-  
-def document_qa(page_name: str):
     # Access the API key
     openai_api_key = os.getenv("OPENAI_API_KEY")
+    st.write("Key loaded?", bool(openai_api_key))
+
+
+    st.title(f"📄 {page_name} – Document Q&A")
+
+    st.write(
+        "Upload a document and ask a question – GPT will answer! "
+        "You need to provide an OpenAI API key from "
+        "[here](https://platform.openai.com/account/api-keys)."
+    )
+
+    # API key input
+    
     api_key_valid = False
     client = None
-
-    st.title(f"📄 {page_name} – Document Summarizer")
 
     if not openai_api_key:
         st.error("No OpenAI API key found. Please add it to your .env file.", icon="🗝️")
     else:
         try:
             client = OpenAI(api_key=openai_api_key)
-            # quick validation
+            # simple validation
             client.chat.completions.create(
-                model="gpt-4o-mini",  # cheaper model for test
+                model="gpt-5-chat-latest",
                 messages=[{"role": "user", "content": "Hi"}],
                 max_tokens=5,
             )
@@ -35,7 +44,7 @@ def document_qa(page_name: str):
             st.success("✅ API key loaded from .env and is valid!")
         except Exception as e:
             st.error(f"❌ Invalid API key or API error: {str(e)}")
-
+            
     if api_key_valid and client:
         upload_file = st.file_uploader(
             "Upload a document (.txt or .pdf)", type=("txt", "pdf")
@@ -52,7 +61,13 @@ def document_qa(page_name: str):
         else:
             st.info("No File uploaded")
 
-        if upload_file:
+        question = st.text_area(
+            "Now ask a question about the document!",
+            placeholder="Is this course hard?",
+            disabled=not upload_file,
+        )
+
+        if upload_file and question:
             document = ""
 
             if (
@@ -85,43 +100,22 @@ def document_qa(page_name: str):
                 st.warning("The document appears to be empty or unreadable.")
                 st.stop()
 
-            # --- Sidebar controls ---
-            st.sidebar.header("Summary Options")
+            messages = [
+                {
+                    "role": "user",
+                    "content": f"Here's a document: {document}\n\n---\n\n {question}",
+                }
+            ]
 
-            summary_type = st.sidebar.radio(
-                "Choose summary format:",
-                [
-                    "Summarize the document in 100 words",
-                    "Summarize the document in 2 connecting paragraphs",
-                    "Summarize the document in 5 bullet points",
-                ],
-            )
-
-            use_advanced = st.sidebar.checkbox("Use Advanced Model (4o)")
-
-            # Model choice
-            model = "gpt-4o" if use_advanced else "gpt-4o-mini"
-
-            # --- Generate Summary ---
-            st.subheader(f"Summary using {model}")
             try:
-                messages = [
-                    {
-                        "role": "user",
-                        "content": f"Here is a document:\n\n{document}\n\n---\n\n{summary_type}",
-                    }
-                ]
-
-                stream = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    stream=True,
-                )
-                st.write_stream(stream)
-
+                for model in ["gpt-3.5-turbo", "gpt-4.1", "gpt-5-chat-latest", "gpt-5-nano"]:
+                    st.subheader(model)
+                    stream = client.chat.completions.create(
+                        model=model, messages=messages, stream=True
+                    )
+                    st.write_stream(stream)
             except Exception as e:
-                st.error(f"An error occurred while generating summary: {str(e)}")
-
+                st.error(f"An error occurred: {str(e)}")
 
 # ----------------- Page Functions -----------------
 def lab1():
