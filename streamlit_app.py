@@ -5,14 +5,16 @@ from io import BytesIO
 import os
 from dotenv import load_dotenv
 
-
+load_dotenv()
 
 # ----------------- Shared Logic -----------------
 def document_qa(page_name: str):
-    load_dotenv()
+    
 
     # Access the API key
     openai_api_key = os.getenv("OPENAI_API_KEY")
+    st.write("Key loaded?", bool(openai_api_key))
+
 
     st.title(f"📄 {page_name} – Document Q&A")
 
