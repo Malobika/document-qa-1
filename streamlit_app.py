@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ----------------- Shared Logic -----------------
-# ----------------- Shared Logic -----------------
+
+    
+
+  
 def document_qa(page_name: str):
     # Access the API key
     openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -118,3 +121,26 @@ def document_qa(page_name: str):
 
             except Exception as e:
                 st.error(f"An error occurred while generating summary: {str(e)}")
+
+
+# ----------------- Page Functions -----------------
+def lab1():
+    document_qa("Lab 1")
+
+def lab2():
+    document_qa("Lab 2")
+
+# ----------------- Navigation -----------------
+pg = st.navigation(
+    {
+        "Labs": [
+            st.Page(lab2, title="Lab 2"),
+            st.Page(lab1, title="Lab 1"),
+        ]
+    },
+    
+)
+
+pg.run()
+
+
