@@ -119,11 +119,10 @@ def lab2():
 pg = st.navigation(
     {
         "Labs": [
-            st.Page(lab1, title="Lab 1"),
             st.Page(lab2, title="Lab 2"),
+            st.Page(lab1, title="Lab 1"),
         ]
-    },
-    default=lab2  # 
+    }
 )
 
 pg.run()
