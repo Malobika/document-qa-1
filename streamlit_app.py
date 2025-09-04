@@ -2,6 +2,14 @@ import streamlit as st
 from openai import OpenAI
 import PyPDF2
 from io import BytesIO
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+# Access the API key
+openai_api_key = os.getenv("OPENAI_API_KEY")
 
 # ----------------- Shared Logic -----------------
 def document_qa(page_name: str):
@@ -14,7 +22,7 @@ def document_qa(page_name: str):
     )
 
     # API key input
-    openai_api_key = st.text_input("OpenAI API Key", type="password")
+    
     api_key_valid = False
     client = None
 
@@ -106,14 +114,12 @@ def document_qa(page_name: str):
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
 
-
 # ----------------- Page Functions -----------------
 def lab1():
     document_qa("Lab 1")
 
 def lab2():
     document_qa("Lab 2")
-
 
 # ----------------- Navigation -----------------
 pg = st.navigation(
@@ -127,3 +133,5 @@ pg = st.navigation(
 )
 
 pg.run()
+
+
