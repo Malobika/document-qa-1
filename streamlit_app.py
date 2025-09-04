@@ -27,7 +27,7 @@ def document_qa(page_name: str):
     client = None
 
     if not openai_api_key:
-        st.info("Please add your OpenAI API key to continue.", icon="🗝️")
+        st.error("No OpenAI API key found. Please add it to your .env file.", icon="🗝️")
     else:
         try:
             client = OpenAI(api_key=openai_api_key)
@@ -38,10 +38,10 @@ def document_qa(page_name: str):
                 max_tokens=5,
             )
             api_key_valid = True
-            st.success("API key is valid!")
+            st.success("✅ API key loaded from .env and is valid!")
         except Exception as e:
-            st.error(f"Invalid API key or API error: {str(e)}")
-
+            st.error(f"❌ Invalid API key or API error: {str(e)}")
+            
     if api_key_valid and client:
         upload_file = st.file_uploader(
             "Upload a document (.txt or .pdf)", type=("txt", "pdf")
