@@ -109,10 +109,10 @@ def document_qa(page_name: str):
 
 # ----------------- Page Functions -----------------
 def lab1():
-    document_qa("Lab 1")
+    document_qa("Lab 2")
 
 def lab2():
-    document_qa("Lab 2")
+    document_qa("Lab 1")
 
 
 # ----------------- Navigation -----------------
