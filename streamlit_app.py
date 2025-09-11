@@ -128,11 +128,15 @@ def lab1():
 def lab2():
     document_qa("Lab 2")
 
+def lab3():
+    document_qa("Lab 3")
+
 pg = st.navigation(
     {
         "Labs": [
             st.Page(lab2, title="Lab 2"),
             st.Page(lab1, title="Lab 1"),
+            st.Page(lab3,title="Lab 3")
         ]
     },
     
