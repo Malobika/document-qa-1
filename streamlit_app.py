@@ -123,7 +123,7 @@ def document_qa(page_name: str):
                 st.error(f"An error occurred while generating summary: {str(e)}")
 
 def document_qa_lab3(page_name: str):
-    
+    st.title("My lab answering chatbot")
     openai_api_key = os.getenv("OPENAI_API_KEY")
     api_key_valid = False
     client = None
@@ -146,8 +146,8 @@ def document_qa_lab3(page_name: str):
             st.error(f"❌ Invalid API key or API error: {str(e)}")
 
     if api_key_valid and client:
-        st.title("My lab answering chatbot")
-        openai_model = st.sidebar.select("which model","mini","regular")
+        
+        openai_model = st.sidebar.selectbox("which model",("mini","regular"))
         if openai_model =="mini":
             model_to_use ="gpt-4o-mini"
         else:
