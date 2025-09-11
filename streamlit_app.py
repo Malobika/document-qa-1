@@ -127,6 +127,12 @@ def document_qa_lab3(page_name: str):
     openai_api_key = os.getenv("OPENAI_API_KEY")
     api_key_valid = False
     client = None
+    openai_model = st.sidebar.selectbox("which model",("mini","regular"))
+    if openai_model =="mini":
+        model_to_use ="gpt-4o-mini"
+    else:
+        model_to_use ="gpt-4o"
+
 
    
     if not openai_api_key:
@@ -136,7 +142,7 @@ def document_qa_lab3(page_name: str):
             client = OpenAI(api_key=openai_api_key)
             # quick validation
             client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model_to_use,
                 messages=[{"role": "user", "content": "Hi"}],
                 max_tokens=5,
             )
@@ -145,14 +151,10 @@ def document_qa_lab3(page_name: str):
         except Exception as e:
             st.error(f"❌ Invalid API key or API error: {str(e)}")
 
+
     if api_key_valid and client:
         
-        openai_model = st.sidebar.selectbox("which model",("mini","regular"))
-        if openai_model =="mini":
-            model_to_use ="gpt-4o-mini"
-        else:
-            model_to_use ="gpt-4o"
-
+        
 
         #with st.chat_message("user"):
             #st.write("Hello ...")
@@ -173,6 +175,28 @@ def document_qa_lab3(page_name: str):
         for message in st.session_state.messages:
             chat_msg =st.chat_message(message["role"])
             chat_msg.write(message["content"])
+
+        '''if promt.lower() in ["yes", "y", "yeah", "ok", "sure"]:
+                    # Use OpenAI again to provide more detail
+                    stream = client.chat.completions.create(
+                        model=model_to_use,
+                        messages=[
+                            {"role": "system", "content": "Give more detail, but still explain in very simple language like to a 10-year-old."},
+                            {"role": "user", "content": st.session_state.messages[-2]["content"]}  # the last question asked
+                        ],
+                        stream=True
+                    )
+                    with st.chat_message("assistant"):
+                        response = st.write_stream(stream)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+
+                    # Ask again
+                    more_q = "Do you want more info?"
+                    with st.chat_message("assistant"):
+                        st.write(more_q)
+                    st.session_state.messages.append({"role": "assistant", "content": more_q})
+
+                    st.session_state["mode"] = "waiting_more_info"'''
 
         
         #react to user input
@@ -203,9 +227,15 @@ def document_qa_lab3(page_name: str):
                 response = st.write_stream(stream)
 
             # save assistant response
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            more_q = "Do you want more info?"
+            with st.chat_message("assistant"):
+                st.write(more_q)
+            st.session_state.messages.append({"role": "assistant", "content": more_q})
 
-                    
+            # Switch mode to waiting for yes/no
+            st.session_state["mode"] = "waiting_more_info"
+
+                                
 
 
             #st.session_state.messages.append({"role":"user","content":promt})
