@@ -166,36 +166,46 @@ def document_qa_lab3(page_name: str):
             #st.session_state.messages =[]
 
         #display messages
-        for message in st.session_state.messages:
+        if "messages" not in st.session_state:
+            st.session_state["messages"] =[{"role":"assistant","content":"How can I help you"}]
             #with st.chat_message(message["role"]):
                 #st.markdown(message["content"])
-
+        for message in st.session_state.messages:
             chat_msg =st.chat_message(message["role"])
             chat_msg.write(message["content"])
 
         
         #react to user input
         if promt := st.chat_input("What is up?"):
-            st.session_state.messages.append({"role":"user","content":promt})
-            #Display user message in chat message container 
+            # append latest user input
+            st.session_state.messages.append({"role": "user", "content": promt})
+
+            # keep only last 2 user messages + latest assistant message
+            user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
+            if len(user_msgs) > 2:
+                # find index of first user message to drop
+                first_user_idx = next(i for i, m in enumerate(st.session_state.messages) if m["role"] == "user")
+                # remove oldest user messages until only 2 remain
+                while len([m for m in st.session_state.messages if m["role"] == "user"]) > 2:
+                    st.session_state.messages.pop(first_user_idx)
+
+            # display user message
             with st.chat_message("user"):
                 st.markdown(promt)
 
-
-            client = st.session_state.client
-            stream =client.chat.completions.create(
-                model= model_to_use,
-                messages= st.session_state.messages,
+            # stream assistant response
+            stream = client.chat.completions.create(
+                model=model_to_use,
+                messages=st.session_state.messages,
                 stream=True
-
             )
             with st.chat_message("assistant"):
-                response =st.write_stream(stream)
+                response = st.write_stream(stream)
 
-            st.session_state.messages.append({"role":"user","content":response})
-                
+            # save assistant response
+            st.session_state.messages.append({"role": "assistant", "content": response})
 
-            
+                    
 
 
             #st.session_state.messages.append({"role":"user","content":promt})
