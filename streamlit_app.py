@@ -176,27 +176,7 @@ def document_qa_lab3(page_name: str):
             chat_msg =st.chat_message(message["role"])
             chat_msg.write(message["content"])
 
-        '''if promt.lower() in ["yes", "y", "yeah", "ok", "sure"]:
-                    # Use OpenAI again to provide more detail
-                    stream = client.chat.completions.create(
-                        model=model_to_use,
-                        messages=[
-                            {"role": "system", "content": "Give more detail, but still explain in very simple language like to a 10-year-old."},
-                            {"role": "user", "content": st.session_state.messages[-2]["content"]}  # the last question asked
-                        ],
-                        stream=True
-                    )
-                    with st.chat_message("assistant"):
-                        response = st.write_stream(stream)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-
-                    # Ask again
-                    more_q = "Do you want more info?"
-                    with st.chat_message("assistant"):
-                        st.write(more_q)
-                    st.session_state.messages.append({"role": "assistant", "content": more_q})
-
-                    st.session_state["mode"] = "waiting_more_info"'''
+        
 
         
         #react to user input
@@ -225,6 +205,10 @@ def document_qa_lab3(page_name: str):
             )
             with st.chat_message("assistant"):
                 response = st.write_stream(stream)
+
+            # save assistant response
+            st.session_state.messages.append({"role": "assistant", "content": response})
+
 
             # save assistant response
             more_q = "Do you want more info?"
