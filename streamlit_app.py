@@ -186,11 +186,11 @@ def document_qa_lab3(page_name: str):
 
             # keep only last 2 user messages + latest assistant message
             user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
-            if len(user_msgs) > 2:
+            if len(user_msgs) > 5:
                 # find index of first user message to drop
                 first_user_idx = next(i for i, m in enumerate(st.session_state.messages) if m["role"] == "user")
                 # remove oldest user messages until only 2 remain
-                while len([m for m in st.session_state.messages if m["role"] == "user"]) > 2:
+                while len([m for m in st.session_state.messages if m["role"] == "user"]) > 5:
                     st.session_state.messages.pop(first_user_idx)
 
             # display user message
@@ -200,7 +200,7 @@ def document_qa_lab3(page_name: str):
             # stream assistant response
             stream = client.chat.completions.create(
                 model=model_to_use,
-                messages=st.session_state.messages,
+                messages=[{"role": "system", "content": "Always explain in very simple language so that a 10-year-old can understand."}] + st.session_state.messages,
                 stream=True
             )
             with st.chat_message("assistant"):
@@ -211,7 +211,7 @@ def document_qa_lab3(page_name: str):
 
 
             # save assistant response
-            more_q = "Do you want more info?"
+            more_q = "DO YOU WANT MORE INFO?"
             with st.chat_message("assistant"):
                 st.write(more_q)
             st.session_state.messages.append({"role": "assistant", "content": more_q})
