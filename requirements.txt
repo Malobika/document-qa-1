@@ -1,4 +1,8 @@
 streamlit
-openai
+openai>=1.0.0
 PyPDF2
+anthropic
+cohere
 python-dotenv
+requests
+beautifulsoup4
