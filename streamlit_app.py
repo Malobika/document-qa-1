@@ -220,14 +220,16 @@ def stream_anthropic(messages, model_name):
       
 
   
-
 def stream_cohere(messages, model_name):
+    import os
+    import cohere
+    from cohere.responses.chat import StreamEvent
+
     api_key = os.getenv("COHERE_API_KEY")
-    if not api_key or not HAS_COHERE:
-        yield "[Cohere] Missing COHERE_API_KEY or package."
+    if not api_key:
+        yield "[Cohere] Missing COHERE_API_KEY."
         return
 
-    import cohere
     co = cohere.Client(api_key)
 
     # Flatten conversation into one message (since co.chat only supports `message=`)
@@ -240,25 +242,27 @@ def stream_cohere(messages, model_name):
             convo.append(f"{m['role']}: {m['content']}")
     prompt = sys_text + "\n".join(convo)
 
-    
     # Mapping logic
-    if model == "Flagship":
+    if model_name == "Flagship":
         model_id = "command-a-03-2025"
     else:
         model_id = "command-a-vision-07-2025"
 
-    # Output the mapped model ID
-    st.write(f"Selected Model ID: {model_id}")
+    yield f"[Cohere] Selected Model ID: {model_id}"
 
     try:
-        resp = co.chat(
-            model=model_id,
-            message=prompt,
-        )
-        # Cohere .chat() is NOT streaming → yield the whole response once
-        yield resp.text
+        # Use streaming API
+        with co.chat_stream(model=model_id, message=prompt) as stream:
+            for event in stream:
+                if isinstance(event, StreamEvent.TextGeneration):
+                    yield event.text  # partial chunks
+                elif isinstance(event, StreamEvent.Error):
+                    yield f"[Cohere Error] {event.error}"
+                elif isinstance(event, StreamEvent.StreamEnd):
+                    break
     except Exception as e:
         yield f"[Cohere Error] {str(e)}"
+
 
 # ---- Compose context (URLs + conversation) ----
 def answer_with_context(question: str, memory_mode: str):
