@@ -244,7 +244,7 @@ def stream_cohere(messages, model_name):
     model = st.selectbox("Model", ["command-r (flagship)", "command-r-plus (advanced)"])
 
     # Mapping logic
-    if model == "command-r-plus (advanced)":
+    if model == "command-r (flagship)":
         model_id = "command-a-03-2025"
     else:
         model_id = "command-a-vision-07-2025"
