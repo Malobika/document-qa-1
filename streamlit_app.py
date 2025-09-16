@@ -241,15 +241,16 @@ def stream_cohere(messages, model_name):
     prompt = sys_text + "\n".join(convo)
 
     # Pick model (advanced vs cheaper)
-    model = st.selectbox("Model", ["command (cheap)", "command-r (flagship)", "command-r-plus (advanced)"])
+    model = st.selectbox("Model", ["command-r (flagship)", "command-r-plus (advanced)"])
 
-    # Mapping
-    if "plus" in model:
+    # Mapping logic
+    if model == "command-r-plus (advanced)":
         model_id = "command-r-plus"
-    elif "flagship" in model or "r" in model and "plus" not in model:
-        model_id = "command-r"
     else:
-        model_id = "command"
+        model_id = "command-r"
+
+    # Output the mapped model ID
+    st.write(f"Selected Model ID: {model_id}")
 
     try:
         resp = co.chat(
