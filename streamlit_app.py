@@ -2,6 +2,8 @@ import os
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
+import cohere
+from cohere.responses.chat import StreamEvent
 
 
 # Optional token counting
@@ -29,7 +31,7 @@ except Exception:
 # Cohere
 try:
     import cohere
-    import cohere
+    
     from cohere.responses.chat import StreamEvent
 
     HAS_COHERE = True
