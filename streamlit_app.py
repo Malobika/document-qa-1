@@ -161,27 +161,26 @@ def stream_openai(messages, model_name):
 
 
 def stream_anthropic(messages, model_name):
-    api_key = os.getenv("CLAUDE_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key or not HAS_ANTHROPIC:
         yield "[Anthropic] Missing API key or package."
         return
     client = anthropic.Anthropic(api_key=api_key)
 
-    # Extract system + user/assistant messages
     sys_text = ""
     content = []
     for m in messages:
         if m["role"] == "system":
             sys_text += m["content"] + "\n"
-        elif m["role"] == "user":
-            content.append({"role": "user", "content": m["content"]})
-        elif m["role"] == "assistant":
-            content.append({"role": "assistant", "content": m["content"]})
+        else:
+            # Anthropic expects [{"type": "text", "text": "..."}]
+            content.append({
+                "role": m["role"],
+                "content": [{"type": "text", "text": m["content"]}]
+            })
 
-    # Pick model
     model_id = "claude-3-haiku-20240307" if "haiku" in model_name else "claude-3-5-sonnet-20240620"
 
-    # Stream
     with client.messages.stream(
         model=model_id,
         max_tokens=1000,
@@ -194,6 +193,7 @@ def stream_anthropic(messages, model_name):
                 yield event.delta.text
             elif event.type == "message_stop":
                 break
+
 
 
 def stream_cohere(messages, model_name):
