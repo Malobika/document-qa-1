@@ -246,10 +246,11 @@ def stream_cohere(messages, model_name):
     # Mapping
     if "plus" in model:
         model_id = "command-r-plus"
-    elif "flagship" in model :
+    elif "flagship" in model or "r" in model and "plus" not in model:
         model_id = "command-r"
     else:
         model_id = "command"
+
     try:
         resp = co.chat(
             model=model_id,
