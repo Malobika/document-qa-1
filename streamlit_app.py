@@ -254,15 +254,15 @@ def stream_cohere(messages, model_name):
 
     try:
         # Use streaming API
-        with co.chat_stream(model=model_id, message=prompt) as stream:
-            for event in stream:
-                if isinstance(event, StreamEvent.TextGeneration):
-                    yield event.text
-                elif isinstance(event, StreamEvent.Error):
-                    yield f"[Cohere Error] {event.error}"
-                elif isinstance(event, StreamEvent.StreamEnd):
-                    break
-
+        # Use streaming API without 'with' statement
+        stream = co.chat_stream(model=model_id, message=prompt)
+        for event in stream:
+            if isinstance(event, StreamEvent.TextGeneration):
+                yield event.text
+            elif isinstance(event, StreamEvent.Error):
+                yield f"[Cohere Error] {event.error}"
+            elif isinstance(event, StreamEvent.StreamEnd):
+                break
     except Exception as e:
         yield f"[Cohere Error] {str(e)}"
 
