@@ -1,8 +1,8 @@
-streamlit
-openai>=1.0.0
-PyPDF2
-anthropic
-cohere
-python-dotenv
-requests
-beautifulsoup4
+streamlit>=1.33.0
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+openai>=1.30.0
+anthropic>=0.29.0
+cohere>=5.3.4
+tiktoken>=0.7.0
+python-dotenv>=1.0.1
