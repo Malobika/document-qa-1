@@ -229,23 +229,23 @@ def stream_cohere(messages, model_name):
         return
     co = cohere.Client(api_key)
 
-    # Flatten messages into a single prompt (Cohere currently expects text input)
-    sys_text = ""
-    convo = []
+    # Convert to Cohere message format
+    cohere_msgs = []
     for m in messages:
-        if m["role"] == "system":
-            sys_text += m["content"] + "\n"
-        else:
-            convo.append(f"{m['role']}: {m['content']}")
-    prompt = sys_text + "\n".join(convo)
+        if m["role"] in ("system", "user", "assistant"):
+            cohere_msgs.append({"role": m["role"], "content": m["content"]})
 
     model_id = "command-light" if "light" in model_name else "command-r"
-    resp = co.chat_stream(model=model_id, message=prompt)
 
-    for event in resp:
-        if event.event_type == "text-generation":
-            yield event.text
-
+    try:
+        resp = co.chat_stream(model=model_id, messages=cohere_msgs)
+        for event in resp:
+            if event.event_type == "text-generation":
+                yield event.text
+            elif event.event_type == "stream-end":
+                break
+    except Exception as e:
+        yield f"[Cohere Error] {str(e)}"
 
 # ---- Compose context (URLs + conversation) ----
 def answer_with_context(question: str, memory_mode: str):
