@@ -2,8 +2,7 @@ import os
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
-import cohere
-from cohere.responses.chat import StreamEvent
+
 
 
 # Optional token counting
@@ -32,7 +31,7 @@ except Exception:
 try:
     import cohere
     
-    from cohere.responses.chat import StreamEvent
+    
 
     HAS_COHERE = True
 except Exception:
@@ -255,16 +254,15 @@ def stream_cohere(messages, model_name):
     yield f"[Cohere] Selected Model ID: {model_id}"
 
     try:
-        # Use streaming API
-        # Use streaming API without 'with' statement
-        stream = co.chat_stream(model=model_id, message=prompt)
-        for event in stream:
-            if isinstance(event, StreamEvent.TextGeneration):
-                yield event.text
-            elif isinstance(event, StreamEvent.Error):
-                yield f"[Cohere Error] {event.error}"
-            elif isinstance(event, StreamEvent.StreamEnd):
-                break
+        with co.chat_stream(model=model_id, message=prompt) as stream:
+            for event in stream:
+                if event.event_type == "text-generation":
+                    yield event.text  # stream partial chunks
+                elif event.event_type == "stream-end":
+                    break
+                elif event.event_type == "error":
+                    yield f"[Cohere Error] {event.error}"
+    
     except Exception as e:
         yield f"[Cohere Error] {str(e)}"
 
