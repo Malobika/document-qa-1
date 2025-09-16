@@ -55,7 +55,7 @@ with st.sidebar:
         model = st.selectbox("Model", ["claude-3-haiku-20240307 (cheap)", "claude-3-5-sonnet-20240620 (flagship)"])
     else:
         # Cohere models
-        model = st.selectbox("Model", ["command-light (cheap)", "command-r (flagship)"])
+        model = st.selectbox("Model", ["Flagship", "Advanced"])
 
     memory_mode = st.selectbox(
         "Conversation Memory",
