@@ -246,7 +246,7 @@ def stream_cohere(messages, model_name):
     # Mapping
     if "plus" in model:
         model_id = "command-r-plus"
-    elif "flagship" in model or "r" in model:
+    elif "flagship" in model :
         model_id = "command-r"
     else:
         model_id = "command"
