@@ -221,15 +221,16 @@ def stream_anthropic(messages, model_name):
 
   
 
-
 def stream_cohere(messages, model_name):
     api_key = os.getenv("COHERE_API_KEY")
     if not api_key or not HAS_COHERE:
         yield "[Cohere] Missing COHERE_API_KEY or package."
         return
+
+    import cohere
     co = cohere.Client(api_key)
 
-    # Flatten messages into a single prompt
+    # Flatten conversation into one message (since co.chat only supports `message=`)
     sys_text = ""
     convo = []
     for m in messages:
@@ -239,15 +240,23 @@ def stream_cohere(messages, model_name):
             convo.append(f"{m['role']}: {m['content']}")
     prompt = sys_text + "\n".join(convo)
 
-    model_id = "command-light" if "light" in model_name else "command-r"
+    # Pick model (advanced vs cheaper)
+    model = st.selectbox("Model", ["command (cheap)", "command-r (flagship)", "command-r-plus (advanced)"])
 
+    # Mapping
+    if "plus" in model:
+        model_id = "command-r-plus"
+    elif "flagship" in model or "r" in model:
+        model_id = "command-r"
+    else:
+        model_id = "command"
     try:
-        resp = co.chat_stream(model=model_id, message=prompt)  # <-- old style
-        for event in resp:
-            if event.event_type == "text-generation":
-                yield event.text
-            elif event.event_type == "stream-end":
-                break
+        resp = co.chat(
+            model=model_id,
+            message=prompt,
+        )
+        # Cohere .chat() is NOT streaming → yield the whole response once
+        yield resp.text
     except Exception as e:
         yield f"[Cohere Error] {str(e)}"
 
