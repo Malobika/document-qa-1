@@ -254,14 +254,18 @@ def stream_cohere(messages, model_name):
     yield f"[Cohere] Selected Model ID: {model_id}"
 
     try:
-        with co.chat_stream(model=model_id, message=prompt) as stream:
-            for event in stream:
-                if event.event_type == "text-generation":
-                    yield event.text  # stream partial chunks
-                elif event.event_type == "stream-end":
-                    break
-                elif event.event_type == "error":
-                    yield f"[Cohere Error] {event.error}"
+        stream = co.chat_stream(
+            model=model_id,
+            message=prompt,
+        )
+
+        for event in stream:
+            if event.event_type == "text-generation":
+                yield event.text   # partial chunk
+            elif event.event_type == "error":
+                yield f"[Cohere Error] {event.error}"
+            elif event.event_type == "stream-end":
+                break
     
     except Exception as e:
         yield f"[Cohere Error] {str(e)}"
