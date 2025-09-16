@@ -229,16 +229,20 @@ def stream_cohere(messages, model_name):
         return
     co = cohere.Client(api_key)
 
-    # Convert to Cohere message format
-    cohere_msgs = []
+    # Flatten messages into a single prompt
+    sys_text = ""
+    convo = []
     for m in messages:
-        if m["role"] in ("system", "user", "assistant"):
-            cohere_msgs.append({"role": m["role"], "content": m["content"]})
+        if m["role"] == "system":
+            sys_text += m["content"] + "\n"
+        else:
+            convo.append(f"{m['role']}: {m['content']}")
+    prompt = sys_text + "\n".join(convo)
 
     model_id = "command-light" if "light" in model_name else "command-r"
 
     try:
-        resp = co.chat_stream(model=model_id, messages=cohere_msgs)
+        resp = co.chat_stream(model=model_id, message=prompt)  # <-- old style
         for event in resp:
             if event.event_type == "text-generation":
                 yield event.text
