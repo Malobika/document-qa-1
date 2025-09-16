@@ -185,29 +185,32 @@ def stream_anthropic(messages, model_name):
     for m in conversation_messages:
         formatted_messages.append({
             "role": m["role"],
-            "content": m["content"]  # Anthropic accepts plain strings, not the complex format you used
+            "content": m["content"]
         })
     
-    # Updated model names (your model IDs are outdated)
+    # Updated model names with current identifiers
     if "haiku" in model_name.lower():
         model_id = "claude-3-haiku-20240307"
     elif "sonnet" in model_name.lower():
-        model_id = "claude-3-5-sonnet-20241022"  # Updated to latest Sonnet
+        # Use the current Claude Sonnet 4 model
+        model_id = "claude-sonnet-4-20250514"
     elif "opus" in model_name.lower():
-        model_id = "claude-3-opus-20240229"
+        # Check if Claude 4 Opus is available, otherwise fall back to Claude 3
+        model_id = "claude-3-opus-20240229"  # Update this when Claude 4 Opus is released
     else:
-        model_id = "claude-3-5-sonnet-20241022"  # Default to latest Sonnet
+        # Default to Claude Sonnet 4
+        model_id = "claude-sonnet-4-20250514"
     
     try:
         with client.messages.stream(
             model=model_id,
-            max_tokens=4000,  # Increased from 1000
+            max_tokens=4000,
             temperature=0.3,
             system=system_text,
             messages=formatted_messages
         ) as stream:
             for event in stream:
-                if event.type == "content_block_delta":  # Updated event type
+                if event.type == "content_block_delta":
                     if hasattr(event.delta, 'text'):
                         yield event.delta.text
                 elif event.type == "message_stop":
