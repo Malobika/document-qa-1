@@ -159,41 +159,64 @@ def stream_openai(messages, model_name):
         if delta and getattr(delta, "content", None):
             yield delta.content
 
-
 def stream_anthropic(messages, model_name):
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key or not HAS_ANTHROPIC:
         yield "[Anthropic] Missing API key or package."
         return
+    
     client = anthropic.Anthropic(api_key=api_key)
-
-    sys_text = ""
-    content = []
+    
+    # Separate system messages from conversation messages
+    system_messages = []
+    conversation_messages = []
+    
     for m in messages:
         if m["role"] == "system":
-            sys_text += m["content"] + "\n"
+            system_messages.append(m["content"])
         else:
-            # Anthropic expects [{"type": "text", "text": "..."}]
-            content.append({
-                "role": m["role"],
-                "content": [{"type": "text", "text": m["content"]}]
-            })
+            conversation_messages.append(m)
+    
+    # Join system messages
+    system_text = "\n".join(system_messages) if system_messages else None
+    
+    # Format messages for Anthropic API
+    formatted_messages = []
+    for m in conversation_messages:
+        formatted_messages.append({
+            "role": m["role"],
+            "content": m["content"]  # Anthropic accepts plain strings, not the complex format you used
+        })
+    
+    # Updated model names (your model IDs are outdated)
+    if "haiku" in model_name.lower():
+        model_id = "claude-3-haiku-20240307"
+    elif "sonnet" in model_name.lower():
+        model_id = "claude-3-5-sonnet-20241022"  # Updated to latest Sonnet
+    elif "opus" in model_name.lower():
+        model_id = "claude-3-opus-20240229"
+    else:
+        model_id = "claude-3-5-sonnet-20241022"  # Default to latest Sonnet
+    
+    try:
+        with client.messages.stream(
+            model=model_id,
+            max_tokens=4000,  # Increased from 1000
+            temperature=0.3,
+            system=system_text,
+            messages=formatted_messages
+        ) as stream:
+            for event in stream:
+                if event.type == "content_block_delta":  # Updated event type
+                    if hasattr(event.delta, 'text'):
+                        yield event.delta.text
+                elif event.type == "message_stop":
+                    break
+    except Exception as e:
+        yield f"[Anthropic] Error: {str(e)}"
+      
 
-    model_id = "claude-3-haiku-20240307" if "haiku" in model_name else "claude-3-5-sonnet-20240620"
-
-    with client.messages.stream(
-        model=model_id,
-        max_tokens=1000,
-        temperature=0.3,
-        system=sys_text.strip() if sys_text else None,
-        messages=content
-    ) as stream:
-        for event in stream:
-            if event.type == "content.delta":
-                yield event.delta.text
-            elif event.type == "message_stop":
-                break
-
+  
 
 
 def stream_cohere(messages, model_name):
