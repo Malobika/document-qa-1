@@ -245,9 +245,9 @@ def stream_cohere(messages, model_name):
 
     # Mapping logic
     if model == "command-r-plus (advanced)":
-        model_id = "command-r-plus"
+        model_id = "command-a-03-2025"
     else:
-        model_id = "command-r"
+        model_id = "command-a-vision-07-2025"
 
     # Output the mapped model ID
     st.write(f"Selected Model ID: {model_id}")
