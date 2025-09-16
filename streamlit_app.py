@@ -240,8 +240,7 @@ def stream_cohere(messages, model_name):
             convo.append(f"{m['role']}: {m['content']}")
     prompt = sys_text + "\n".join(convo)
 
-    # Pick model (advanced vs cheaper)
-    model = st.selectbox("Model", ["Flagship", "Advanced"])
+    
     # Mapping logic
     if model == "Flagship":
         model_id = "command-a-03-2025"
