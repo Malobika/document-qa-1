@@ -218,10 +218,10 @@ def stream_cohere(messages, model_name):
 # ---- Compose context (URLs + conversation) ----
 def answer_with_context(question: str, memory_mode: str):
     url_texts = []
-    if url1:
-        url_texts.append(fetch_url_text(url1))
-    if url2:
-        url_texts.append(fetch_url_text(url2))
+    if "url1_text" in st.session_state and st.session_state.url1_text:
+        url_texts.append(st.session_state.url1_text)
+    if "url2_text" in st.session_state and st.session_state.url2_text:
+        url_texts.append(st.session_state.url2_text)
 
     if url_texts:
         context_blob = "\n\n".join(
@@ -245,15 +245,28 @@ def answer_with_context(question: str, memory_mode: str):
 
 
 # ---- Chat UI ----
+# ---- Chat UI ----
 if st.session_state.messages:
     for m in st.session_state.messages:
         with st.chat_message(m["role"] if m["role"] in ("user", "assistant") else "assistant"):
             st.markdown(m["content"][:4000] + ("..." if len(m["content"]) > 4000 else ""))
 
 user_q = st.chat_input("Ask a question based on the two URLs (if provided).")
-if user_q:
-    with st.chat_message("assistant"):
-        stream_gen = answer_with_context(user_q, memory_mode)
-        full = st.write_stream(stream_gen)
 
-    st.session_state.messages.append({"role": "assistant", "content": full})
+if user_q:
+    # First parse and validate URLs
+    parsed1 = fetch_url_text(url1) if url1 else ""
+    parsed2 = fetch_url_text(url2) if url2 else ""
+
+    if not parsed1 and not parsed2:
+        st.error("❌ Could not parse either URL. Please check the links and try again.")
+    else:
+        # Store parsed text into session so it doesn't refetch every time
+        st.session_state.url1_text = parsed1
+        st.session_state.url2_text = parsed2
+
+        with st.chat_message("assistant"):
+            stream_gen = answer_with_context(user_q, memory_mode)
+            full = st.write_stream(stream_gen)
+
+        st.session_state.messages.append({"role": "assistant", "content": full})
