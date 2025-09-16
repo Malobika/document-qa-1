@@ -167,25 +167,31 @@ def stream_anthropic(messages, model_name):
         return
     client = anthropic.Anthropic(api_key=api_key)
 
+    # Extract system + user/assistant messages
     sys_text = ""
     content = []
     for m in messages:
         if m["role"] == "system":
             sys_text += m["content"] + "\n"
-        else:
-            content.append({"role": m["role"], "content": m["content"]})
+        elif m["role"] == "user":
+            content.append({"role": "user", "content": m["content"]})
+        elif m["role"] == "assistant":
+            content.append({"role": "assistant", "content": m["content"]})
 
+    # Pick model
     model_id = "claude-3-haiku-20240307" if "haiku" in model_name else "claude-3-5-sonnet-20240620"
+
+    # Stream
     with client.messages.stream(
         model=model_id,
-        system=sys_text if sys_text else None,
         max_tokens=1000,
         temperature=0.3,
-        messages=content,
+        system=sys_text.strip() if sys_text else None,
+        messages=content
     ) as stream:
         for event in stream:
-            if event.type == "content.delta" and hasattr(event, "delta"):
-                yield event.delta
+            if event.type == "content.delta":
+                yield event.delta.text
             elif event.type == "message_stop":
                 break
 
