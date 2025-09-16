@@ -3,6 +3,7 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 
+
 # Optional token counting
 try:
     import tiktoken
@@ -28,6 +29,9 @@ except Exception:
 # Cohere
 try:
     import cohere
+    import cohere
+    from cohere import StreamEvent
+
     HAS_COHERE = True
 except Exception:
     HAS_COHERE = False
@@ -221,9 +225,7 @@ def stream_anthropic(messages, model_name):
 
   
 def stream_cohere(messages, model_name):
-    import os
-    import cohere
-    from cohere.responses.chat import StreamEvent
+    
 
     api_key = os.getenv("COHERE_API_KEY")
     if not api_key:
@@ -255,11 +257,12 @@ def stream_cohere(messages, model_name):
         with co.chat_stream(model=model_id, message=prompt) as stream:
             for event in stream:
                 if isinstance(event, StreamEvent.TextGeneration):
-                    yield event.text  # partial chunks
+                    yield event.text
                 elif isinstance(event, StreamEvent.Error):
                     yield f"[Cohere Error] {event.error}"
                 elif isinstance(event, StreamEvent.StreamEnd):
                     break
+
     except Exception as e:
         yield f"[Cohere Error] {str(e)}"
 
