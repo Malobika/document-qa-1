@@ -30,7 +30,7 @@ except Exception:
 try:
     import cohere
     import cohere
-    from cohere import StreamEvent
+    from cohere.responses.chat import StreamEvent
 
     HAS_COHERE = True
 except Exception:
