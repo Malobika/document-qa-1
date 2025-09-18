@@ -4,6 +4,10 @@ import PyPDF2
 from io import BytesIO
 import os
 from dotenv import load_dotenv
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+import chromadb
 
 load_dotenv()
 
@@ -232,36 +236,77 @@ def document_qa_lab3(page_name: str):
 
 def document_qa_lab4(page_name:str):
     st.title("My lab answering chatbot")
+
+    # Load API key
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    api_key_valid = False
-    client = None
-    openai_model = st.sidebar.selectbox("which model",("mini","regular"))
-    if openai_model =="mini":
-        model_to_use ="gpt-4o-mini"
-    else:
-        model_to_use ="gpt-4o"
-
-
-   
     if not openai_api_key:
         st.error("No OpenAI API key found. Please add it to your .env file.", icon="🗝️")
+        return
+
+    # Initialize OpenAI client once
+    if 'openai_client' not in st.session_state:
+        st.session_state.openai_client = OpenAI(api_key=openai_api_key)
+    openai_client = st.session_state.openai_client
+
+    # Persistent ChromaDB
+    chroma_client = chromadb.PersistentClient(path="./Chroma_lab")
+
+   
+    
+    
+    chromaDB_path = "./Chroma_lab"
+    chroma_client =chromadb.PersistentClient(chromaDB_path )
+    # ✅ Only create collection if not already in session
+    if 'Lab4_vectorDB' not in st.session_state:
+        collection = chroma_client.get_or_create_collection("Lab4Collection")
+
+        # ---- Read and embed 7 PDFs ----
+        pdf_files = ["file1.pdf", "file2.pdf", "file3.pdf", 
+                     "file4.pdf", "file5.pdf", "file6.pdf", "file7.pdf"]
+        
+        for pdf_file in pdf_files:
+            reader = PyPDF2(pdf_file)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text()
+
+            # ✅ call helper
+            add_to_collection(collection, text, pdf_file)
+
+        st.session_state.Lab4_vectorDB = collection
+        st.success("✅ Lab4 ChromaDB created and stored in session!")
     else:
-        try:
-            client = OpenAI(api_key=openai_api_key)
-            # quick validation
-            client.chat.completions.create(
-                model=model_to_use,
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5,
-            )
-            api_key_valid = True
-            st.success("✅ API key loaded from .env and is valid!")
-        except Exception as e:
-            st.error(f"❌ Invalid API key or API error: {str(e)}")
+        collection = st.session_state.Lab4_vectorDB
+
+    # ---- Test query ----
+    topic = st.sidebar.selectbox("Test Query", ("Generative AI", "Text Mining", "Data Science Overview"))
+    response = openai_client.embeddings.create(input=topic, model="text-embedding-3-small")
+    query_embedding = response.data[0].embedding
+
+    results = collection.query(query_embeddings=[query_embedding], n_results=3)
+
+    st.subheader("Top 3 Retrieved Documents")
+    for i in range(len(results["ids"][0])):
+        doc_id = results["ids"][0][i]
+        st.write(f"{i+1}. {doc_id}")
 
 
+# ✅ FIXED function
+def add_to_collection(collection, text, filename):
+    openai_client = st.session_state.openai_client
+    response = openai_client.embeddings.create(
+        input=text,
+        model="text-embedding-3-small"   # ✅ fixed typo (was text-embeddings-3-small)
+    )
+    embedding = response.data[0].embedding
 
-
+    # ✅ added missing commas + metadatas
+    collection.add(
+        documents=[text],
+        ids=[filename],
+        embeddings=[embedding],
+        metadatas=[{"filename": filename}]
+    )
       
 def lab1():
     document_qa("Lab 1")
