@@ -249,11 +249,7 @@ def document_qa_lab4(page_name:str):
         st.session_state.openai_client = OpenAI(api_key=openai_api_key)
     openai_client = st.session_state.openai_client
 
-    # Persistent ChromaDB
-    chroma_client = chromadb.PersistentClient(path="./Chroma_lab")
-
    
-    
     
     chromaDB_path = "./Chroma_lab"
     chroma_client =chromadb.PersistentClient(chromaDB_path )
@@ -274,17 +270,7 @@ def document_qa_lab4(page_name:str):
                     text += page_text
 
         print(f"Read {len(text)} characters from {os.path.basename(pdf_file)}")
-        # ---- Read and embed 7 PDFs ----
-        #pdf_files = ["file1.pdf", "file2.pdf", "file3.pdf", 
-                     #"file4.pdf", "file5.pdf", "file6.pdf", "file7.pdf"]
-        
-        #for pdf_file in pdf_files:
-            #reader = PyPDF2(pdf_file)
-            #text = ""
-            #for page in reader.pages:
-                #text += page.extract_text()
-
-            # ✅ call helper
+       
         add_to_collection(collection, text, pdf_file)
 
         st.session_state.Lab4_vectorDB = collection
