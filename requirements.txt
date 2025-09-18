@@ -6,3 +6,4 @@ anthropic>=0.29.0
 cohere
 tiktoken>=0.7.0
 python-dotenv>=1.0.1
+PyPDF2
