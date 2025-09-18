@@ -260,7 +260,7 @@ def document_qa_lab4(page_name:str):
     # ✅ Only create collection if not already in session
     if 'Lab4_vectorDB' not in st.session_state:
         collection = chroma_client.get_or_create_collection("Lab4Collection")
-        pdf_path = r"/files"
+        pdf_path = r"./files"
 
         # Get all PDF files in that folder
         pdf_files = [os.path.join(pdf_path, f) for f in os.listdir(pdf_path) if f.endswith(".pdf")]
