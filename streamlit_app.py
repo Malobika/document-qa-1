@@ -260,19 +260,32 @@ def document_qa_lab4(page_name:str):
     # ✅ Only create collection if not already in session
     if 'Lab4_vectorDB' not in st.session_state:
         collection = chroma_client.get_or_create_collection("Lab4Collection")
+        pdf_path = r"C:\Users\User\OneDrive\Documents\Class-HI APPLICATION ist-688\lab-4"
 
-        # ---- Read and embed 7 PDFs ----
-        pdf_files = ["file1.pdf", "file2.pdf", "file3.pdf", 
-                     "file4.pdf", "file5.pdf", "file6.pdf", "file7.pdf"]
-        
+        # Get all PDF files in that folder
+        pdf_files = [os.path.join(pdf_path, f) for f in os.listdir(pdf_path) if f.endswith(".pdf")]
+
         for pdf_file in pdf_files:
-            reader = PyPDF2(pdf_file)
+            reader = PdfReader(pdf_file)   # ✅ local file direct read
             text = ""
             for page in reader.pages:
-                text += page.extract_text()
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text
+
+        print(f"Read {len(text)} characters from {os.path.basename(pdf_file)}")
+        # ---- Read and embed 7 PDFs ----
+        #pdf_files = ["file1.pdf", "file2.pdf", "file3.pdf", 
+                     #"file4.pdf", "file5.pdf", "file6.pdf", "file7.pdf"]
+        
+        #for pdf_file in pdf_files:
+            #reader = PyPDF2(pdf_file)
+            #text = ""
+            #for page in reader.pages:
+                #text += page.extract_text()
 
             # ✅ call helper
-            add_to_collection(collection, text, pdf_file)
+        add_to_collection(collection, text, pdf_file)
 
         st.session_state.Lab4_vectorDB = collection
         st.success("✅ Lab4 ChromaDB created and stored in session!")
