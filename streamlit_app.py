@@ -253,26 +253,26 @@ def document_qa_lab4(page_name:str):
     
     chromaDB_path = "./Chroma_lab"
     chroma_client =chromadb.PersistentClient(chromaDB_path )
-    # ✅ Only create collection if not already in session
     if 'Lab4_vectorDB' not in st.session_state:
         collection = chroma_client.get_or_create_collection("Lab4Collection")
-        pdf_path = r"./files"
+        pdf_path = "./files"
 
         # Get all PDF files in that folder
         pdf_files = [os.path.join(pdf_path, f) for f in os.listdir(pdf_path) if f.endswith(".pdf")]
 
         for pdf_file in pdf_files:
-            reader = PdfReader(pdf_file)   # ✅ local file direct read
+            reader = PdfReader(pdf_file)
             text = ""
             for page in reader.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text
 
-        print(f"Read {len(text)} characters from {os.path.basename(pdf_file)}")
-       
-        add_to_collection(collection, text, pdf_file)
+            # ✅ Add each file separately, use just the filename
+            add_to_collection(collection, text, os.path.basename(pdf_file))
+            st.write(f"📄 Loaded {os.path.basename(pdf_file)} ({len(text)} characters)")
 
+        # ✅ Save collection to session state
         st.session_state.Lab4_vectorDB = collection
         st.success("✅ Lab4 ChromaDB created and stored in session!")
     else:
@@ -289,23 +289,22 @@ def document_qa_lab4(page_name:str):
     for i, meta in enumerate(results["metadatas"][0]):
         st.write(f"{i+1}. {meta['filename']}")
 
-# ✅ FIXED function
+
 def add_to_collection(collection, text, filename):
     openai_client = st.session_state.openai_client
     response = openai_client.embeddings.create(
         input=text,
-        model="text-embedding-3-small"   # ✅ fixed typo (was text-embeddings-3-small)
+        model="text-embedding-3-small"
     )
     embedding = response.data[0].embedding
 
-    # ✅ added missing commas + metadatas
+    # ✅ store filename in metadata
     collection.add(
         documents=[text],
         ids=[filename],
         embeddings=[embedding],
         metadatas=[{"filename": filename}]
     )
-      
 def lab1():
     document_qa("Lab 1")
 
