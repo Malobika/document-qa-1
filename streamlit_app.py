@@ -1,6 +1,6 @@
 import streamlit as st
 from openai import OpenAI
-import PyPDF2
+from PyPDF2 import PdfReader
 from io import BytesIO
 import os
 from dotenv import load_dotenv
