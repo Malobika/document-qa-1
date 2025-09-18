@@ -4,9 +4,7 @@ import PyPDF2
 from io import BytesIO
 import os
 from dotenv import load_dotenv
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import chromadb
 
 load_dotenv()
@@ -235,6 +233,9 @@ def document_qa_lab3(page_name: str):
             #st.session_state.messages.append({"role":"user","content":response})
 
 def document_qa_lab4(page_name:str):
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
     st.title("My lab answering chatbot")
 
     # Load API key
