@@ -300,10 +300,8 @@ def document_qa_lab4(page_name:str):
     results = collection.query(query_embeddings=[query_embedding], n_results=3)
 
     st.subheader("Top 3 Retrieved Documents")
-    for i in range(len(results["ids"][0])):
-        doc_id = results["ids"][0][i]
-        st.write(f"{i+1}. {doc_id}")
-
+    for i, meta in enumerate(results["metadatas"][0]):
+        st.write(f"{i+1}. {meta['filename']}")
 
 # ✅ FIXED function
 def add_to_collection(collection, text, filename):
