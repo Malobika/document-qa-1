@@ -5,6 +5,8 @@ from io import BytesIO
 import os
 from dotenv import load_dotenv
 
+from hw4 import run as hw4_run
+
 import chromadb
 
 load_dotenv()
@@ -321,11 +323,13 @@ pg = st.navigation(
         "Labs": [
             st.Page(lab2, title="Lab 2"),
             st.Page(lab1, title="Lab 1"),
-            st.Page(lab3,title="Lab 3"),
-            st.Page(lab4,title="Lab 4")
-        ]
+            st.Page(lab3, title="Lab 3"),
+            st.Page(lab4, title="Lab 4"),
+        ],
+        "HWs": [
+            st.Page(hw4_run, title="HW4"),
+        ],
     },
-    
 )
 
 pg.run()
