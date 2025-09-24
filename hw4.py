@@ -295,87 +295,59 @@ def _call_llm(openai_client: OpenAI, model: str, system_prompt: str, messages: L
 def page():
     st.title("🧠 HW4 – RAG Chatbot (HTML → Vector DB → LLM)")
 
-    # API key + client
+    # --- API key + OpenAI client ---
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         st.error("No OpenAI API key found. Add OPENAI_API_KEY to your .env.", icon="🗝️")
-        return
+        st.stop()
     if "openai_client" not in st.session_state:
         st.session_state.openai_client = OpenAI(api_key=api_key)
     client = st.session_state.openai_client
 
-    # Vector DB (create once, then reuse)
+    # --- Vector DB (create once, then reuse) ---
     collection = _ensure_vector_db(client)
     if collection is None:
-        return
+        st.stop()
 
-    # Sidebar: model + retrieval params
+    # --- Sidebar settings ---
     st.sidebar.header("Settings")
     model_label = st.sidebar.radio("LLM Backend", list(MODEL_CHOICES.keys()))
     streamer = MODEL_CHOICES[model_label]
-
     top_k = st.sidebar.slider("Top-k retrieved chunks", min_value=2, max_value=8, value=4, step=1)
     st.sidebar.caption("Vector DB: created once; subsequent runs will reuse it.")
 
-    # --- Retrieval ---
-    hits = _retrieve_context(collection, client, user_q, k=top_k)
-    context_blocks = [h["text"] for h in hits]
-    context_text = "\n\n---\n\n".join(context_blocks)
+    # --- Conversation memory ---
+    if "messages_hw4" not in st.session_state:
+        st.session_state.messages_hw4 = [
+            {"role": "assistant", "content": "Hi! Ask me anything about the provided HTML docs."}
+        ]
 
-    system_prompt = (
-        "You are a helpful RAG assistant. Use the supplied CONTEXT first. "
-        "If the answer is not fully in context, say what’s missing. "
-        "Cite the filename and part in parentheses when using retrieved chunks."
-    )
-    rag_message = f"CONTEXT:\n{context_text}\n\nUSER QUESTION:\n{user_q}"
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": rag_message}
-    ]
-        
-
-    #top_k = st.sidebar.slider("Top-k retrieved chunks", min_value=2, max_value=8, value=4, step=1)
-
-    #st.sidebar.caption("Vector DB: created once; subsequent runs will reuse it.")
-
-    # Conversation memory (store LAST 5 Q&A pairs)
-    #if "messages_hw4" not in st.session_state:
-        #st.session_state.messages_hw4 = [{"role": "assistant", "content": "Hi! Ask me anything about the provided HTML docs."}]
-
-    # Display history
+    # --- Display previous chat ---
     for m in st.session_state.messages_hw4:
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
 
+    # --- User input ---
     user_q = st.chat_input("Type your question…")
+
     if user_q:
-        # Append user message
+        # Save user message
         st.session_state.messages_hw4.append({"role": "user", "content": user_q})
-        # Keep last 5 user messages + last assistant messages (approx 5 Q&A pairs)
+
+        # Trim memory to last 5 user turns (plus assistant replies)
         user_msgs = [m for m in st.session_state.messages_hw4 if m["role"] == "user"]
         while len(user_msgs) > 5:
-            # drop the oldest user message + its following assistant message if present
-            # (simple pruning: remove from the front until only 5 user msgs remain)
-            # find index of first "user"
             idx = next(i for i, m in enumerate(st.session_state.messages_hw4) if m["role"] == "user")
-            # pop that user
             st.session_state.messages_hw4.pop(idx)
-            # if the next msg is assistant, pop it too to keep Q&A pairs aligned-ish
             if idx < len(st.session_state.messages_hw4) and st.session_state.messages_hw4[idx]["role"] == "assistant":
                 st.session_state.messages_hw4.pop(idx)
             user_msgs = [m for m in st.session_state.messages_hw4 if m["role"] == "user"]
 
-        # Retrieve context from vector DB
+        # --- Retrieve context for this question ---
         hits = _retrieve_context(collection, client, user_q, k=top_k)
-        context_blocks = []
-        citations = []
-        for h in hits:
-            context_blocks.append(h["text"])
-            meta = h.get("metadata", {})
-            citations.append(f"{meta.get('filename','?')}[part {meta.get('part','?')}]")
+        context_blocks = [h["text"] for h in hits]
         context_text = "\n\n---\n\n".join(context_blocks)
 
-        # Build LLM call
         system_prompt = (
             "You are a helpful RAG assistant. Use the supplied CONTEXT first. "
             "If the answer is not fully in context, say what’s missing. "
@@ -386,23 +358,26 @@ def page():
             f"USER QUESTION:\n{user_q}\n\n"
             f"Remember to cite like (filename.html part 1) when relevant."
         )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": rag_message}
+        ]
 
+        # --- Call chosen model ---
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
-                # Build full message list (system + user) the same way
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": rag_message}
-                ]
-
                 output = ""
-                for token in streamer(messages, model_label):   # <--- use your selected backend
+                for token in streamer(messages, model_label):
                     output += token
-                    st.write(token, end="")                     # live stream like before
-                st.markdown(output)                             # final render
-                answer = output
-                # Save assistant reply
-                st.session_state.messages_hw4.append({"role": "assistant", "content": answer})
+                    st.write(token, end="")
+                st.markdown(output)
+        answer = output
+
+        # Save assistant reply
+        st.session_state.messages_hw4.append({"role": "assistant", "content": answer})
+
+
+
 
     # ---------- Evaluation Panel ----------
     with st.expander("🔎 Evaluate with 5 questions (compare all 3 models)"):
