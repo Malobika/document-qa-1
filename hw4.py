@@ -23,6 +23,7 @@ import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import chromadb
+
 from chromadb.errors import IDAlreadyExistsError
 
 load_dotenv()
