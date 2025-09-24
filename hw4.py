@@ -384,11 +384,12 @@ def page():
     st.subheader("🔍 Model Evaluation")
 
     test_questions = [
-        "What is this project about?",
-        "How are the HTML docs structured?",
-        "What does chunking mean here?",
-        "Who should use this app?",
-        "Explain the RAG pipeline briefly."
+        "What is the overall purpose of the website described by these HTML pages?",
+        "List three key features or topics covered in the documents.",
+	    "Where would a new user find instructions or a getting-started section?",
+	    "Summarize one page’s content in 3 bullet points.",
+	    "Cite which page best answers a question about configuration or setup."
+
     ]
 
     if st.button("Run evaluation on sample questions"):
