@@ -380,43 +380,44 @@ def page():
 
 
     # ---------- Evaluation Panel ----------
-    with st.expander("🔎 Evaluate with 5 questions (compare all 3 models)"):
-        st.write("Click **Run Evaluation** to ask 5 pre-set questions to each model and see side-by-side results.")
-        run_eval = st.button("Run Evaluation")
-        if run_eval:
-            results = []
-            for q in EVAL_QUESTIONS:
-                row = {"question": q}
-                for label, mdl in MODEL_CHOICES.items():
-                    hits = _retrieve_context(collection, client, q, k=top_k)
-                    ctx = "\n\n---\n\n".join(h["text"] for h in hits)
-                    sys_p = (
-                        "Evaluation mode: concise, factual, cite (filename.html part N) "
-                        "for any claims pulled from context."
-                    )
-                    content = _call_llm(client, mdl, sys_p, [
-                        {"role": "user", "content": f"CONTEXT:\n{ctx}\n\nQUESTION:\n{q}"}
-                    ])
-                    row[label] = content
-                results.append(row)
+    # ---------- Evaluation Panel ----------
+    st.divider()
+    st.subheader("🔍 Model Evaluation")
 
-            # Show comparison table-ish (each row is a question with three model answers)
-            for r in results:
-                st.markdown("---")
-                st.markdown(f"**Q:** {r['question']}")
-                for label in MODEL_CHOICES.keys():
-                    st.markdown(f"**{label}**")
-                    st.write(r[label])
+    # Optional: pick some test questions for quick evaluation
+    test_questions = [
+        "What is this project about?",
+        "How are the HTML docs structured?",
+        "What does chunking mean here?",
+        "Who should use this app?",
+        "Explain the RAG pipeline briefly."
+    ]
 
-            # A short structured rubric to guide your writeup
-            st.markdown("### Suggested analysis structure")
-            st.markdown(
-                "- **Coverage & faithfulness:** Does the answer rely on the retrieved context? Any hallucinations?\n"
-                "- **Specificity & citations:** Are filenames/parts cited when claims are made?\n"
-                "- **Clarity & brevity:** Is the answer easy to read and actionable?\n"
-                "- **Consistency across runs:** Do answers remain stable for the same query?\n"
-                "- **Latency/Cost (optional):** If observed, note response speed and token usage."
+    if st.button("Run evaluation on sample questions"):
+        for q in test_questions:
+            st.markdown(f"**Q:** {q}")
+            # Retrieve context for each test question
+            hits = _retrieve_context(collection, client, q, k=top_k)
+            ctx = "\n\n---\n\n".join(h["text"] for h in hits)
+
+            # Build message list (system + user) same as chat
+            sys_p = (
+                "You are a helpful RAG assistant. Use the supplied CONTEXT first. "
+                "If the answer is not fully in context, say what’s missing. "
+                "Cite the filename and part in parentheses when using retrieved chunks."
             )
+            user_msg = f"CONTEXT:\n{ctx}\n\nQUESTION:\n{q}\n\nRemember to cite like (filename.html part 1) when relevant."
+            messages = [
+                {"role": "system", "content": sys_p},
+                {"role": "user", "content": user_msg}
+            ]
+
+            # Evaluate each model in MODEL_CHOICES
+            for label, streamer in MODEL_CHOICES.items():
+                st.write(f"**{label}:**")
+                output = "".join(chunk for chunk in streamer(messages, label))
+                st.markdown(output)
+            st.markdown("---")
 
 # Public entry point for your app loader
 def run():
