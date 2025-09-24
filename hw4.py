@@ -17,6 +17,9 @@ import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
 
+
+
+
 # --- Chroma setup (sqlite on some hosts needs pysqlite3 shim)
 __import__('pysqlite3')
 import sys
@@ -33,11 +36,104 @@ CHROMA_PATH = "./Chroma_HW4"        # persistent db folder
 COLLECTION_NAME = "HW4_HTML_Collection"
 EMBED_MODEL = "text-embedding-3-small"
 
-# 3 selectable chat models
+import os
+import streamlit as st
+
+# --- Add your 3 streamers ---
+from openai import OpenAI as OpenAIClient
+try:
+    import anthropic
+    HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+try:
+    import cohere
+except ImportError:
+    cohere = None
+
+def stream_openai(messages, model_name):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        yield "[OpenAI] Missing API key."
+        return
+    client = OpenAIClient(api_key=api_key)
+    model_id = "gpt-4o-mini" if "mini" in model_name.lower() else "gpt-4o"
+    stream = client.chat.completions.create(
+        model=model_id,
+        messages=messages,
+        stream=True,
+        temperature=0.3,
+    )
+    for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta and getattr(delta, "content", None):
+            yield delta.content
+
+def stream_anthropic(messages, model_name):
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key or not HAS_ANTHROPIC:
+        yield "[Anthropic] Missing API key or package."
+        return
+    client = anthropic.Anthropic(api_key=api_key)
+    # Separate system from user/assistant
+    system_text = "\n".join(m["content"] for m in messages if m["role"] == "system")
+    conversation = [m for m in messages if m["role"] != "system"]
+
+    if "haiku" in model_name.lower():
+        model_id = "claude-3-haiku-20240307"
+    elif "opus" in model_name.lower():
+        model_id = "claude-3-opus-20240229"
+    else:
+        model_id = "claude-sonnet-4-20250514"
+
+    try:
+        with client.messages.stream(
+            model=model_id,
+            max_tokens=4000,
+            temperature=0.3,
+            system=system_text,
+            messages=conversation
+        ) as stream:
+            for event in stream:
+                if event.type == "content_block_delta" and hasattr(event.delta, 'text'):
+                    yield event.delta.text
+                elif event.type == "message_stop":
+                    break
+    except Exception as e:
+        yield f"[Anthropic] Error: {str(e)}"
+
+def stream_cohere(messages, model_name):
+    api_key = os.getenv("COHERE_API_KEY")
+    if not api_key or cohere is None:
+        yield "[Cohere] Missing COHERE_API_KEY or package."
+        return
+    co = cohere.Client(api_key)
+    sys_text = "\n".join(m["content"] for m in messages if m["role"] == "system")
+    convo = "\n".join(f"{m['role']}: {m['content']}" for m in messages if m["role"] != "system")
+    prompt = sys_text + "\n" + convo
+
+    if "flagship" in model_name.lower():
+        model_id = "command-a-03-2025"
+    else:
+        model_id = "command-a-vision-07-2025"
+
+    try:
+        stream = co.chat_stream(model=model_id, message=prompt)
+        for event in stream:
+            if event.event_type == "text-generation":
+                yield event.text
+            elif event.event_type == "error":
+                yield f"[Cohere Error] {event.error}"
+            elif event.event_type == "stream-end":
+                break
+    except Exception as e:
+        yield f"[Cohere Error] {str(e)}"
+
+
 MODEL_CHOICES = {
-    "Fast & Cheap (gpt-4o-mini)": "gpt-4o-mini",
-    "Balanced (gpt-4o)": "gpt-4o",
-    "Accurate (gpt-4.1)": "gpt-4.1",
+    "OpenAI (gpt-4o / 4o-mini)": stream_openai,
+    "Claude (Haiku / Sonnet / Opus)": stream_anthropic,
+    "Cohere (Flagship / Vision)": stream_cohere,
 }
 
 # 5 evaluation questions (edit if you want)
@@ -215,15 +311,36 @@ def page():
 
     # Sidebar: model + retrieval params
     st.sidebar.header("Settings")
-    model_label = st.sidebar.radio("LLM", list(MODEL_CHOICES.keys()), index=0)
-    model_name = MODEL_CHOICES[model_label]
-    top_k = st.sidebar.slider("Top-k retrieved chunks", min_value=2, max_value=8, value=4, step=1)
+    model_label = st.sidebar.radio("LLM Backend", list(MODEL_CHOICES.keys()))
+    streamer = MODEL_CHOICES[model_label]
 
+    top_k = st.sidebar.slider("Top-k retrieved chunks", min_value=2, max_value=8, value=4, step=1)
     st.sidebar.caption("Vector DB: created once; subsequent runs will reuse it.")
 
+    # --- Retrieval ---
+    hits = _retrieve_context(collection, client, user_q, k=top_k)
+    context_blocks = [h["text"] for h in hits]
+    context_text = "\n\n---\n\n".join(context_blocks)
+
+    system_prompt = (
+        "You are a helpful RAG assistant. Use the supplied CONTEXT first. "
+        "If the answer is not fully in context, say what’s missing. "
+        "Cite the filename and part in parentheses when using retrieved chunks."
+    )
+    rag_message = f"CONTEXT:\n{context_text}\n\nUSER QUESTION:\n{user_q}"
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": rag_message}
+    ]
+        
+
+    #top_k = st.sidebar.slider("Top-k retrieved chunks", min_value=2, max_value=8, value=4, step=1)
+
+    #st.sidebar.caption("Vector DB: created once; subsequent runs will reuse it.")
+
     # Conversation memory (store LAST 5 Q&A pairs)
-    if "messages_hw4" not in st.session_state:
-        st.session_state.messages_hw4 = [{"role": "assistant", "content": "Hi! Ask me anything about the provided HTML docs."}]
+    #if "messages_hw4" not in st.session_state:
+        #st.session_state.messages_hw4 = [{"role": "assistant", "content": "Hi! Ask me anything about the provided HTML docs."}]
 
     # Display history
     for m in st.session_state.messages_hw4:
@@ -272,13 +389,20 @@ def page():
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
-                answer = _call_llm(client, model_name, system_prompt, [
+                # Build full message list (system + user) the same way
+                messages = [
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": rag_message}
-                ])
-                st.markdown(answer)
+                ]
 
-        # Save assistant reply
-        st.session_state.messages_hw4.append({"role": "assistant", "content": answer})
+                output = ""
+                for token in streamer(messages, model_label):   # <--- use your selected backend
+                    output += token
+                    st.write(token, end="")                     # live stream like before
+                st.markdown(output)                             # final render
+                answer = output
+                # Save assistant reply
+                st.session_state.messages_hw4.append({"role": "assistant", "content": answer})
 
     # ---------- Evaluation Panel ----------
     with st.expander("🔎 Evaluate with 5 questions (compare all 3 models)"):
