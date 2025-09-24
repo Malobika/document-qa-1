@@ -380,11 +380,9 @@ def page():
 
 
     # ---------- Evaluation Panel ----------
-    # ---------- Evaluation Panel ----------
     st.divider()
     st.subheader("🔍 Model Evaluation")
 
-    # Optional: pick some test questions for quick evaluation
     test_questions = [
         "What is this project about?",
         "How are the HTML docs structured?",
@@ -394,13 +392,14 @@ def page():
     ]
 
     if st.button("Run evaluation on sample questions"):
+        streamer = MODEL_CHOICES[model_label]   # <-- use the model selected in sidebar
+
         for q in test_questions:
             st.markdown(f"**Q:** {q}")
             # Retrieve context for each test question
             hits = _retrieve_context(collection, client, q, k=top_k)
             ctx = "\n\n---\n\n".join(h["text"] for h in hits)
 
-            # Build message list (system + user) same as chat
             sys_p = (
                 "You are a helpful RAG assistant. Use the supplied CONTEXT first. "
                 "If the answer is not fully in context, say what’s missing. "
@@ -412,12 +411,12 @@ def page():
                 {"role": "user", "content": user_msg}
             ]
 
-            # Evaluate each model in MODEL_CHOICES
-            for label, streamer in MODEL_CHOICES.items():
-                st.write(f"**{label}:**")
-                output = "".join(chunk for chunk in streamer(messages, label))
-                st.markdown(output)
+            # 🔹 Only call the selected model
+            st.write(f"**{model_label}:**")
+            output = "".join(chunk for chunk in streamer(messages, model_label))
+            st.markdown(output)
             st.markdown("---")
+
 
 # Public entry point for your app loader
 def run():
