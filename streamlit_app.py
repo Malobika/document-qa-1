@@ -301,7 +301,7 @@ def document_qa_lab5(page_num:str):
         return
     openweatherkey=os.getenv("OpenWeatherAPI")
     location="Syracuse, NY"
-    print(get_current_weather(location, openweatherkey))
+    st.write(get_current_weather(location, openweatherkey))
     
 def get_current_weather(location:str,OpenWeatherAPI):
     import requests
