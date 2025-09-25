@@ -299,10 +299,40 @@ def document_qa_lab5(page_num:str):
     if not openai_api_key:
         st.error("No OpenAI API key found. Please add it to your .env file.", icon="🗝️")
         return
+    
     openweatherkey=os.getenv("OpenWeatherAPI")
     location="Syracuse, NY"
     st.write(get_current_weather(location, openweatherkey))
-    
+
+    st.title("👕 The What-To-Wear Weather Bot")
+
+    city = st.text_input("Enter a city:", "Syracuse, NY")
+
+    if st.button("Get Advice"):
+        api_key = st.secrets["OPENWEATHER_API_KEY"]
+        weather = get_current_weather(city, api_key)
+        st.write("### 🌡 Current Weather", weather)
+
+        advice = get_clothing_advice(weather)
+        st.markdown("### 👗 Clothing & Picnic Advice")
+        st.write(advice)
+def get_clothing_advice(weather):
+    prompt = f"""
+    The current weather in {weather_data['location']} is:
+    Temperature: {weather_data['temperature']}°C
+    Feels like: {weather_data['feels_like']}°C
+    Humidity: {weather_data['humidity']}%
+
+    Suggest what someone should wear and say if it's a good day for a picnic.
+    """
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": "You are a helpful weather clothing advisor."},
+                  {"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message["content"]
 def get_current_weather(location:str,OpenWeatherAPI):
     import requests
     if "," in location:
