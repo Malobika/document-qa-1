@@ -31,7 +31,7 @@ from chromadb.errors import IDAlreadyExistsError
 load_dotenv()
 
 # -------- Configuration --------
-HTML_FOLDER = "./html"              # <- unzip your provided HTML files here
+HTML_FOLDER = "./su_orgs"              # <- unzip your provided HTML files here
 CHROMA_PATH = "./Chroma_HW4"        # persistent db folder
 COLLECTION_NAME = "HW4_HTML_Collection"
 EMBED_MODEL = "text-embedding-3-small"
