@@ -304,6 +304,7 @@ def document_qa_lab5(page_num:str):
     print(get_current_weather(location, openweatherkey))
     
 def get_current_weather(location:str,OpenWeatherAPI):
+    import requests
     if "," in location:
         location = location.split(",")[0].strip()
     urlbase= "https://api.openweathermap.org/data/2.5/"
