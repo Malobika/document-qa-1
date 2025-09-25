@@ -293,6 +293,7 @@ def document_qa_lab4(page_name:str):
 
 
 def document_qa_lab5(page_num:str):
+    import requests
     st.title("My Weather App")
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
