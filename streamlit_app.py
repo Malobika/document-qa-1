@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 
 from hw4 import run as hw4_run
-from hw5 import run as hw5_run
+import hw5 
 
 import chromadb
 
@@ -384,6 +384,9 @@ def lab4():
 def lab5():
     document_qa_lab5("Lab 5")
 
+def hw5_run():
+    hw5.run()
+
 pg = st.navigation(
     {
         "Labs": [
@@ -395,7 +398,7 @@ pg = st.navigation(
         ],
         "HWs": [
             st.Page(hw4_run, title="HW4"),
-            st.Page(hw5_run, title="HW5")
+             st.Page(hw5_run, title="HW5")
         ],
     },
 )
