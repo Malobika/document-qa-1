@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 
 from hw4 import run as hw4_run
-from hw7 import run as hw7_run
+import hw7 
 import hw5 
 
 import chromadb
@@ -396,7 +396,8 @@ def lab5():
 
 def hw5_run():
     hw5.run()
-
+def hw7_run():
+    hw7.run()
 pg = st.navigation(
     {
         "Labs": [
