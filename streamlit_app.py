@@ -159,7 +159,16 @@ def document_qa_lab3(page_name: str):
 
     if api_key_valid and client:
         
-        
+        st.set_page_config(
+            page_title= "My Title",
+            layout="wide",
+            initial_sidebar_state="expanded",
+            menu_items={ 'get Help': 'https://dbdmg.polito.it/',
+                        'Report a bug': "https://dbdmg.polito.it",
+                        'About': "# *Intro to datbases* course"
+
+            }
+        )
 
         #with st.chat_message("user"):
             #st.write("Hello ...")

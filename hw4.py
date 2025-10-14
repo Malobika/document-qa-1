@@ -25,7 +25,7 @@ __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
-import chromadb
+import chromadb 
 from chromadb.errors import IDAlreadyExistsError
 
 load_dotenv()
@@ -406,7 +406,9 @@ def page():
                 "If the answer is not fully in context, say what’s missing. "
                 "Cite the filename and part in parentheses when using retrieved chunks."
             )
+            
             user_msg = f"CONTEXT:\n{ctx}\n\nQUESTION:\n{q}\n\nRemember to cite like (filename.html part 1) when relevant."
+            
             messages = [
                 {"role": "system", "content": sys_p},
                 {"role": "user", "content": user_msg}
