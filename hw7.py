@@ -271,117 +271,122 @@ def rank_most_interesting(results: Dict[str, Any]) -> List[Tuple[float, Dict[str
     return items
 
 
-# -----------------------------
-# Streamlit App
-# -----------------------------
-st.set_page_config(page_title="News Bot (CSV + HTML + Chroma)", page_icon="📰", layout="wide")
-st.title("📰 CSV News Bot (with HTML fetching)")
+    # -----------------------------
+    # Streamlit App
+    # -----------------------------
+def page():
+    st.set_page_config(page_title="News Bot (CSV + HTML + Chroma)", page_icon="📰", layout="wide")
+    st.title("📰 CSV News Bot (with HTML fetching)")
 
-with st.sidebar:
-    st.markdown("### Setup")
-    csv_file = st.file_uploader("Upload your news CSV", type=["csv"])
-    keep_msgs = st.slider("Messages to keep", min_value=1, max_value=5, value=3)
+    with st.sidebar:
+        st.markdown("### Setup")
+        csv_file = st.file_uploader("Upload your news CSV", type=["csv"])
+        keep_msgs = st.slider("Messages to keep", min_value=1, max_value=5, value=3)
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-st.session_state.messages = st.session_state.messages[-keep_msgs:]
+    st.session_state.messages = st.session_state.messages[-keep_msgs:]
 
-if csv_file is not None:
-    # Build client
-    try:
-        client = validate_openai_client()
-    except Exception as e:
-        st.error(f"OpenAI client error: {e}")
-        st.stop()
+    if csv_file is not None:
+        # Build client
+        try:
+            client = validate_openai_client()
+        except Exception as e:
+            st.error(f"OpenAI client error: {e}")
+            st.stop()
 
-    # Load + fetch
-    try:
-        df = load_csv(csv_file)
-        df = enrich_from_urls(df)
-        docs, metas, ids = chunk_rows(df)
-        if not docs:
-            st.warning("No indexable text found (even after fetching URLs).")
-        collection = build_vector_db(docs, metas, ids, client)
-        st.success("Vector DB ready ✅")
-    except Exception as e:
-        st.error(f"Data/Vector error: {e}")
-        st.stop()
+        # Load + fetch
+        try:
+            df = load_csv(csv_file)
+            df = enrich_from_urls(df)
+            docs, metas, ids = chunk_rows(df)
+            if not docs:
+                st.warning("No indexable text found (even after fetching URLs).")
+            collection = build_vector_db(docs, metas, ids, client)
+            st.success("Vector DB ready ✅")
+        except Exception as e:
+            st.error(f"Data/Vector error: {e}")
+            st.stop()
 
-    # Show prior messages
-    for m in st.session_state.messages:
-        with st.chat_message(m["role"]):
-            st.write(m["content"])
+        # Show prior messages
+        for m in st.session_state.messages:
+            with st.chat_message(m["role"]):
+                st.write(m["content"])
 
-    user_prompt = st.chat_input("Ask about the news…")
-    if user_prompt:
-        st.session_state.messages.append({"role": "user", "content": user_prompt})
-        lowered = user_prompt.strip().lower()
+        user_prompt = st.chat_input("Ask about the news…")
+        if user_prompt:
+            st.session_state.messages.append({"role": "user", "content": user_prompt})
+            lowered = user_prompt.strip().lower()
 
-        if "find the most interesting news" in lowered:
-            res = query_collection(
-                collection,
-                client,
-                query="legal risk regulation litigation merger acquisition class action enforcement compliance",
-                k=25,
-            )
-            ranked = rank_most_interesting(res)[:10]
-            lines = []
-            for i, (score, meta, doc) in enumerate(ranked, start=1):
-                title = (doc[:160] + "…") if len(doc) > 160 else doc
-                url = meta.get("url") or ""
-                date_str = meta.get("date") or ""
-                src = meta.get("source") or "csv"
-                lines.append(
-                    f"{i}. **Score {score:.2f}** — {date_str} — [{title}]({url})  \n_source: {src}_"
-                    if url else f"{i}. **Score {score:.2f}** — {date_str} — {title}  \n_source: {src}_"
+            if "find the most interesting news" in lowered:
+                res = query_collection(
+                    collection,
+                    client,
+                    query="legal risk regulation litigation merger acquisition class action enforcement compliance",
+                    k=25,
                 )
-            answer = "Top interesting items (law-firm context):\n\n" + "\n\n".join(lines)
+                ranked = rank_most_interesting(res)[:10]
+                lines = []
+                for i, (score, meta, doc) in enumerate(ranked, start=1):
+                    title = (doc[:160] + "…") if len(doc) > 160 else doc
+                    url = meta.get("url") or ""
+                    date_str = meta.get("date") or ""
+                    src = meta.get("source") or "csv"
+                    lines.append(
+                        f"{i}. **Score {score:.2f}** — {date_str} — [{title}]({url})  \n_source: {src}_"
+                        if url else f"{i}. **Score {score:.2f}** — {date_str} — {title}  \n_source: {src}_"
+                    )
+                answer = "Top interesting items (law-firm context):\n\n" + "\n\n".join(lines)
 
-        elif lowered.startswith("find news about "):
-            topic = user_prompt[len("find news about "):].strip() or "general"
-            res = query_collection(collection, client, query=topic, k=12)
-            docs_ = res.get("documents", [[]])[0]
-            metas_ = res.get("metadatas", [[]])[0]
-            items = []
-            for doc, meta in zip(docs_, metas_):
-                date_str = meta.get("date") or ""
-                url = meta.get("url") or ""
-                src = meta.get("source") or "csv"
-                title = (doc[:200] + "…") if len(doc) > 200 else doc
-                items.append(
-                    f"- {date_str} — [{title}]({url})  \n_source: {src}_"
-                    if url else f"- {date_str} — {title}  \n_source: {src}_"
-                )
-            answer = f"News about **{topic}**:\n\n" + ("\n\n".join(items) if items else "No matches found.")
+            elif lowered.startswith("find news about "):
+                topic = user_prompt[len("find news about "):].strip() or "general"
+                res = query_collection(collection, client, query=topic, k=12)
+                docs_ = res.get("documents", [[]])[0]
+                metas_ = res.get("metadatas", [[]])[0]
+                items = []
+                for doc, meta in zip(docs_, metas_):
+                    date_str = meta.get("date") or ""
+                    url = meta.get("url") or ""
+                    src = meta.get("source") or "csv"
+                    title = (doc[:200] + "…") if len(doc) > 200 else doc
+                    items.append(
+                        f"- {date_str} — [{title}]({url})  \n_source: {src}_"
+                        if url else f"- {date_str} — {title}  \n_source: {src}_"
+                    )
+                answer = f"News about **{topic}**:\n\n" + ("\n\n".join(items) if items else "No matches found.")
 
-        else:
-            # Generic RAG
-            res = query_collection(collection, client, query=user_prompt, k=8)
-            ctx_docs = res.get("documents", [[]])[0]
-            ctx_metas = res.get("metadatas", [[]])[0]
-            context_snips = []
-            for d, m in zip(ctx_docs, ctx_metas):
-                url = m.get("url") or ""
-                date_str = m.get("date") or ""
-                snippet = d if len(d) < 700 else d[:700] + "…"
-                line = f"[{date_str}] {snippet}"
-                if url:
-                    line += f"\nURL: {url}"
-                context_snips.append(line)
-            context_text = "\n\n---\n\n".join(context_snips) if context_snips else "No context found."
+            else:
+                # Generic RAG
+                res = query_collection(collection, client, query=user_prompt, k=8)
+                ctx_docs = res.get("documents", [[]])[0]
+                ctx_metas = res.get("metadatas", [[]])[0]
+                context_snips = []
+                for d, m in zip(ctx_docs, ctx_metas):
+                    url = m.get("url") or ""
+                    date_str = m.get("date") or ""
+                    snippet = d if len(d) < 700 else d[:700] + "…"
+                    line = f"[{date_str}] {snippet}"
+                    if url:
+                        line += f"\nURL: {url}"
+                    context_snips.append(line)
+                context_text = "\n\n---\n\n".join(context_snips) if context_snips else "No context found."
 
-            messages = [
-                {"role": "system", "content": "You are a news assistant for a large global law firm. Be concise, risk-aware, and practical."},
-                {"role": "user", "content": user_prompt},
-                {"role": "system", "content": f"Context (retrieved):\n\n{context_text}"},
-            ]
-            resp = client.chat.completions.create(model=CHAT_MODEL, temperature=0.2, messages=messages)
-            answer = resp.choices[0].message.content
+                messages = [
+                    {"role": "system", "content": "You are a news assistant for a large global law firm. Be concise, risk-aware, and practical."},
+                    {"role": "user", "content": user_prompt},
+                    {"role": "system", "content": f"Context (retrieved):\n\n{context_text}"},
+                ]
+                resp = client.chat.completions.create(model=CHAT_MODEL, temperature=0.2, messages=messages)
+                answer = resp.choices[0].message.content
 
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-        with st.chat_message("assistant"):
-            st.write(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+            with st.chat_message("assistant"):
+                st.write(answer)
 
-else:
-    st.info("Upload a CSV to begin.")
+    else:
+        st.info("Upload a CSV to begin.")
+
+
+def run():
+    page()
