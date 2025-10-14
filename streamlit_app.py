@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from hw4 import run as hw4_run
 import hw7 
 import hw5 
+import hw7_claude
 
 import chromadb
 
@@ -398,6 +399,9 @@ def hw5_run():
     hw5.run()
 def hw7_run():
     hw7.run()
+def hw7c_run():
+    hw7_claude.run()
+
 pg = st.navigation(
     {
         "Labs": [
@@ -410,7 +414,8 @@ pg = st.navigation(
         "HWs": [
             st.Page(hw4_run, title="HW4"),
              st.Page(hw5_run, title="HW5"),
-             st.Page(hw7_run,title = "HW7")
+             st.Page(hw7_run,title = "HW7"),
+             st.Page(hw7c_run,title = "HW7_claude")
         ],
     },
 )

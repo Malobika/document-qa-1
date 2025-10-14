@@ -1,7 +1,8 @@
+import datetime
 import os
 import csv
 import streamlit as st
-from openai import OpenAI
+from anthropic import Anthropic
 import chromadb
 import requests
 from bs4 import BeautifulSoup
@@ -9,10 +10,13 @@ import re
 
 # ========== CONFIG ==========
 CSV_PATH = "./files/Examples.csv"
-COLLECTION_NAME = "news"
-EMBED_MODEL = "text-embedding-3-small"
-CHAT_MODEL = "gpt-4o-mini"
-CHROMA_PATH ="./chroma_news/"
+CHROMA_PATH = "./chroma_db_claude"
+COLLECTION_NAME = "news_claude"
+CHAT_MODEL = "claude-3-5-sonnet-20241022"
+
+# Note: Claude doesn't provide embeddings, so we'll use a simple embedding service
+# For this demo, we'll use sentence-transformers locally
+from sentence_transformers import SentenceTransformer
 
 # Keywords for ranking "interesting" news (law firm context)
 LAW_KEYWORDS = [
@@ -22,13 +26,17 @@ LAW_KEYWORDS = [
 
 # ========== HELPER FUNCTIONS ==========
 
-def get_openai_client():
-    """Initialize OpenAI client"""
-    api_key = os.getenv("OPENAI_API_KEY")
+def get_anthropic_client():
+    """Initialize Anthropic client"""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        st.error("Set OPENAI_API_KEY environment variable")
+        st.error("Set ANTHROPIC_API_KEY environment variable")
         st.stop()
-    return OpenAI(api_key=api_key)
+    return Anthropic(api_key=api_key)
+
+def get_embedding_model():
+    """Load sentence transformer for embeddings"""
+    return SentenceTransformer('all-MiniLM-L6-v2')
 
 def fetch_url_text(url):
     """Fetch and extract text from URL using BeautifulSoup"""
@@ -67,11 +75,10 @@ def enrich_articles(articles):
     
     return articles
 
-def create_vector_db(articles, client):
+def create_vector_db(articles, embed_model):
     """Create ChromaDB collection with embeddings"""
     chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
     collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
-    
     
     if collection.count() > 0:
         return collection
@@ -95,16 +102,15 @@ def create_vector_db(articles, client):
     
     # Create embeddings in batches
     batch_size = 100
+    progress_bar = st.progress(0)
+    
     for i in range(0, len(documents), batch_size):
         batch_docs = documents[i:i+batch_size]
         batch_meta = metadatas[i:i+batch_size]
         batch_ids = ids[i:i+batch_size]
         
-        response = client.embeddings.create(
-            model=EMBED_MODEL,
-            input=batch_docs
-        )
-        embeddings = [item.embedding for item in response.data]
+        # Use sentence-transformers for embeddings
+        embeddings = embed_model.encode(batch_docs).tolist()
         
         collection.add(
             documents=batch_docs,
@@ -112,16 +118,14 @@ def create_vector_db(articles, client):
             embeddings=embeddings,
             ids=batch_ids
         )
+        
+        progress_bar.progress((i + batch_size) / len(documents))
     
     return collection
 
-def search_news(collection, client, query, k=10):
+def search_news(collection, embed_model, query, k=10):
     """Search for relevant news using vector similarity"""
-    response = client.embeddings.create(
-        model=EMBED_MODEL,
-        input=[query]
-    )
-    query_embedding = response.data[0].embedding
+    query_embedding = embed_model.encode([query])[0].tolist()
     
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -144,7 +148,6 @@ def rank_by_interest(results):
         # Add recency boost
         date_str = meta.get("date", "")
         if date_str:
-            # Simple recency check (assumes YYYY-MM-DD format)
             if "2024" in date_str or "2025" in date_str:
                 score += 2
         
@@ -159,23 +162,26 @@ def rank_by_interest(results):
 
 # ========== STREAMLIT UI ==========
 def page():
-    st.set_page_config(page_title="News Bot", page_icon="📰")
-    st.title("📰 News Bot for Law Firms")
+    st.set_page_config(page_title="News Bot (Claude)", page_icon="🤖")
+    st.title("🤖 News Bot for Law Firms (Claude)")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
     # Load data and create vector DB
     try:
-        client = get_openai_client()
+        client = get_anthropic_client()
         
         if "collection" not in st.session_state:
+            embed_model = get_embedding_model()
             articles = load_csv_to_dict()
             articles = enrich_articles(articles)
-            st.session_state.collection = create_vector_db(articles, client)
+            st.session_state.collection = create_vector_db(articles, embed_model)
+            st.session_state.embed_model = embed_model
             st.success("✅ Ready!")
         
         collection = st.session_state.collection
+        embed_model = st.session_state.embed_model
         
     except Exception as e:
         st.error(f"Error: {e}")
@@ -196,7 +202,7 @@ def page():
             if "most interesting" in prompt.lower():
                 results = search_news(
                     collection, 
-                    client, 
+                    embed_model, 
                     "litigation regulation merger acquisition lawsuit compliance",
                     k=20
                 )
@@ -215,7 +221,7 @@ def page():
             elif prompt.lower().startswith("find news about"):
                 topic = prompt.replace("find news about", "").strip()
                 
-                results = search_news(collection, client, topic, k=10)
+                results = search_news(collection, embed_model, topic, k=10)
                 
                 response = f"**News about '{topic}':**\n\n"
                 for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0]), 1):
@@ -227,27 +233,29 @@ def page():
                     response += f"   *{date}*\n\n"
             
             else:
-                results = search_news(collection, client, prompt, k=5)
+                results = search_news(collection, embed_model, prompt, k=5)
                 
                 context = "\n\n".join([
                     f"Article: {doc[:500]}" 
                     for doc in results["documents"][0]
                 ])
                 
-                messages = [
-                    {"role": "system", "content": "You are a news assistant for a law firm. Be concise and highlight legal implications."},
-                    {"role": "user", "content": f"Question: {prompt}\n\nContext:\n{context}"}
-                ]
-                
-                completion = client.chat.completions.create(
+                # Use Claude API
+                message = client.messages.create(
                     model=CHAT_MODEL,
-                    messages=messages
+                    max_tokens=1024,
+                    system="You are a news assistant for a law firm. Be concise and highlight legal implications.",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": f"Question: {prompt}\n\nContext:\n{context}"
+                        }
+                    ]
                 )
-                response = completion.choices[0].message.content
+                response = message.content[0].text
             
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
-
 
 
 # ========== TEST QUERIES ==========
@@ -270,11 +278,15 @@ TEST_QUERIES = {
 
 # ========== HELPER FUNCTIONS ==========
 
-def get_openai_client():
-    api_key = os.getenv("OPENAI_API_KEY")
+def get_anthropic_client():
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        raise ValueError("Set OPENAI_API_KEY environment variable")
-    return OpenAI(api_key=api_key)
+        raise ValueError("Set ANTHROPIC_API_KEY environment variable")
+    return Anthropic(api_key=api_key)
+
+def get_embedding_model():
+    """Load sentence transformer for embeddings"""
+    return SentenceTransformer('all-MiniLM-L6-v2')
 
 def load_collection():
     """Load existing ChromaDB collection"""
@@ -282,12 +294,8 @@ def load_collection():
     collection = chroma_client.get_collection(COLLECTION_NAME)
     return collection
 
-def search_news(collection, client, query, k=10):
-    response = client.embeddings.create(
-        model=EMBED_MODEL,
-        input=[query]
-    )
-    query_embedding = response.data[0].embedding
+def search_news(collection, embed_model, query, k=10):
+    query_embedding = embed_model.encode([query])[0].tolist()
     
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -319,15 +327,15 @@ def rank_by_interest(results):
     ranked.sort(key=lambda x: x["score"], reverse=True)
     return ranked
 
-def run_most_interesting_test(collection, client):
+def run_most_interesting_test(collection, embed_model):
     """Test: find the most interesting news"""
     print("\n" + "="*80)
-    print("TEST 1: MOST INTERESTING NEWS")
+    print("TEST 1: MOST INTERESTING NEWS (CLAUDE)")
     print("="*80)
     
     results = search_news(
         collection, 
-        client, 
+        embed_model, 
         "litigation regulation merger acquisition lawsuit compliance",
         k=20
     )
@@ -369,14 +377,14 @@ def run_most_interesting_test(collection, client):
     
     return ranked[:10]
 
-def run_specific_topic_test(collection, client, topic_query):
+def run_specific_topic_test(collection, embed_model, topic_query):
     """Test: find news about specific topic"""
     print("\n" + "="*80)
-    print(f"TEST 2: SPECIFIC TOPIC - '{topic_query}'")
+    print(f"TEST 2: SPECIFIC TOPIC - '{topic_query}' (CLAUDE)")
     print("="*80)
     
     topic = topic_query.replace("find news about", "").strip()
-    results = search_news(collection, client, topic, k=10)
+    results = search_news(collection, embed_model, topic, k=10)
     
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
@@ -413,29 +421,32 @@ def run_specific_topic_test(collection, client, topic_query):
     
     return precision
 
-def run_general_rag_test(collection, client, question):
+def run_general_rag_test(collection, embed_model, client, question):
     """Test: general RAG question"""
     print("\n" + "="*80)
-    print(f"TEST 3: GENERAL RAG - '{question}'")
+    print(f"TEST 3: GENERAL RAG - '{question}' (CLAUDE)")
     print("="*80)
     
-    results = search_news(collection, client, question, k=5)
+    results = search_news(collection, embed_model, question, k=5)
     
     context = "\n\n".join([
         f"Article: {doc[:300]}" 
         for doc in results["documents"][0]
     ])
     
-    messages = [
-        {"role": "system", "content": "You are a news assistant for a law firm. Be concise and highlight legal implications."},
-        {"role": "user", "content": f"Question: {question}\n\nContext:\n{context}"}
-    ]
-    
-    completion = client.chat.completions.create(
+    # Use Claude API
+    message = client.messages.create(
         model=CHAT_MODEL,
-        messages=messages
+        max_tokens=1024,
+        system="You are a news assistant for a law firm. Be concise and highlight legal implications.",
+        messages=[
+            {
+                "role": "user",
+                "content": f"Question: {question}\n\nContext:\n{context}"
+            }
+        ]
     )
-    answer = completion.choices[0].message.content
+    answer = message.content[0].text
     
     print("\nGENERATED ANSWER:")
     print(answer)
@@ -457,30 +468,33 @@ def run_general_rag_test(collection, client, question):
 def run_all_tests():
     """Run all test suites"""
     print("\n" + "#"*80)
-    print("# NEWS BOT TESTING SCRIPT")
+    print("# NEWS BOT TESTING SCRIPT - CLAUDE VERSION")
     print("# " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("#"*80)
     
     try:
-        client = get_openai_client()
+        client = get_anthropic_client()
+        embed_model = get_embedding_model()
         collection = load_collection()
         
         print(f"\nLoaded collection: {collection.count()} documents")
+        print(f"Using model: {CHAT_MODEL}")
+        print(f"Using embeddings: sentence-transformers (all-MiniLM-L6-v2)")
         
         # Test 1: Most Interesting
-        results_interesting = run_most_interesting_test(collection, client)
+        results_interesting = run_most_interesting_test(collection, embed_model)
         
         # Test 2: Specific Topics
         precisions = []
         for query in TEST_QUERIES["specific_topic"]:
-            precision = run_specific_topic_test(collection, client, query)
+            precision = run_specific_topic_test(collection, embed_model, query)
             precisions.append(precision)
         
         avg_precision = sum(precisions) / len(precisions)
         
         # Test 3: General RAG
         for query in TEST_QUERIES["general_rag"]:
-            run_general_rag_test(collection, client, query)
+            run_general_rag_test(collection, embed_model, client, query)
         
         # Final Summary
         print("\n" + "#"*80)
@@ -495,19 +509,17 @@ def run_all_tests():
         print("#"*80)
         print("1. Review flagged items above")
         print("2. Complete manual evaluations")
-        print("3. Compare with human rankings")
-        print("4. Test with different LLMs")
+        print("3. Compare with OpenAI version results")
+        print("4. Compare answer quality between models")
         print("5. Document findings")
         
     except Exception as e:
         print(f"\nERROR: {e}")
         print("Make sure:")
-        print("  1. OPENAI_API_KEY is set")
-        print("  2. ChromaDB collection exists (run main app first)")
-        print("  3. CSV file is in correct location")
+        print("  1. ANTHROPIC_API_KEY is set")
+        print("  2. ChromaDB collection exists (run Claude app first)")
+        print("  3. sentence-transformers is installed")
 
-
-    
 def run():
     page()
 
