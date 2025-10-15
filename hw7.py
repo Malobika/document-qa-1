@@ -1,346 +1,259 @@
-import os
-import csv
+# app.py
+# minimal CSV -> HTML fetch -> Chroma -> Streamlit chat
+
+import os, uuid, re, sys
+from typing import List, Dict, Any, Tuple, Optional
+
+import pandas as pd
 import streamlit as st
 from openai import OpenAI
+
+# sqlite shim for some hosts (Chroma needs it)
+__import__("pysqlite3")
+sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+
 import chromadb
 import requests
 from bs4 import BeautifulSoup
-import re
 
-# ========== CONFIG ==========
-CSV_PATH = "./files/Examples.csv"
+# ---------- config ----------
 CHROMA_PATH = "./chroma_db"
-COLLECTION_NAME = "news"
+COLLECTION_NAME = "news_chunks"
 EMBED_MODEL = "text-embedding-3-small"
-CHAT_MODEL = "gpt-4o-mini"
+CHAT_MODEL = "gpt-4o-mini"   # adjust if needed
+MAX_CHARS = 40_000
+REQ_TIMEOUT = 15
+USER_AGENT = "CSVNewsBot/1.0 (+local) PythonRequests"
 
 LAW_KEYWORDS = [
-    "lawsuit", "litigation", "regulation", "antitrust", "merger", 
-    "acquisition", "compliance", "patent", "settlement"
+    "litigation", "lawsuit", "regulation", "regulatory", "antitrust", "merger",
+    "acquisition", "m&a", "sanctions", "compliance", "data privacy", "gdpr",
+    "ccpa", "patent", "ip", "governance", "enforcement", "settlement", "class action"
 ]
 
-# ========== HELPER FUNCTIONS ==========
+# ---------- helpers ----------
+def openai_client() -> OpenAI:
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("Set OPENAI_API_KEY in env.")
+    cli = OpenAI(api_key=key)
+    _ = cli.models.list()
+    return cli
 
-def get_openai_client():
-    """Initialize OpenAI client"""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        st.error("Set OPENAI_API_KEY environment variable")
-        st.stop()
-    return OpenAI(api_key=api_key)
+def clean_text(s: str) -> str:
+    s = re.sub(r"\s+", " ", (s or "")).strip()
+    return s[:MAX_CHARS]
 
-def fetch_url_text(url):
-    """Fetch and extract text from URL using BeautifulSoup"""
+def html_to_text(url: str) -> Optional[str]:
+    if not url:
+        return None
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
-            text = soup.get_text(separator="\n")
-            text = re.sub(r"\n{3,}", "\n\n", text)
-            return text.strip()[:10000]
-    except:
-        pass
-    return None
-
-def load_csv_to_dict():
-    """Load CSV as list of dicts"""
-    articles = []
-    with open(CSV_PATH, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            articles.append(row)
-    return articles
-
-def enrich_articles(articles):
-    """Fetch URL content for each article"""
-    st.info(f"Loading {len(articles)} articles...")
-    progress_bar = st.progress(0)
-    
-    for i, article in enumerate(articles):
-        url = article.get("URL", "")
-        if url:
-            fetched_text = fetch_url_text(url)
-            if fetched_text:
-                article["Document"] = fetched_text
-        progress_bar.progress((i + 1) / len(articles))
-    
-    return articles
-
-def create_vector_db(articles, client, collection):
-    """Build embeddings and add to the provided collection"""
-    st.info("Creating embeddings for the first time...")
-    
-    documents = []
-    metadatas = []
-    ids = []
-    
-    for i, article in enumerate(articles):
-        doc_text = article.get("Document", "")
-        if len(doc_text) > 50:
-            documents.append(doc_text)
-            metadatas.append({
-                "company": article.get("company_name", ""),
-                "date": article.get("Date", ""),
-                "url": article.get("URL", "")
-            })
-            ids.append(f"doc_{i}")
-    
-    batch_size = 100
-    progress_bar = st.progress(0)
-    
-    for i in range(0, len(documents), batch_size):
-        batch_docs = documents[i:i+batch_size]
-        batch_meta = metadatas[i:i+batch_size]
-        batch_ids = ids[i:i+batch_size]
-        
-        response = client.embeddings.create(
-            model=EMBED_MODEL,
-            input=batch_docs
+        r = requests.get(
+            url,
+            headers={"User-Agent": USER_AGENT, "Accept": "text/html,*/*;q=0.8"},
+            timeout=REQ_TIMEOUT,
         )
-        embeddings = [item.embedding for item in response.data]
-        
-        collection.add(
-            documents=batch_docs,
-            metadatas=batch_meta,
-            embeddings=embeddings,
-            ids=batch_ids
-        )
-        
-        progress_bar.progress(min((i + batch_size) / len(documents), 1.0))
-    
-    return collection
+        if r.status_code != 200:
+            return None
+        if "text/html" not in r.headers.get("Content-Type", "").lower():
+            return None
+        soup = BeautifulSoup(r.text, "html.parser")
+        for t in soup(["script", "style", "noscript", "svg", "header", "footer", "nav"]):
+            t.decompose()
+        container = soup.find("article") or soup.find("main") or soup.body or soup
+        text = container.get_text(" ", strip=True)
+        title = soup.title.get_text(strip=True) if soup.title else ""
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        desc = meta_desc.get("content", "").strip() if meta_desc else ""
+        return clean_text("\n".join([x for x in (title, desc, text) if x]))
+    except Exception:
+        return None
 
-def search_news(collection, client, query, k=10):
-    """Search for relevant news using vector similarity"""
-    response = client.embeddings.create(
-        model=EMBED_MODEL,
-        input=[query]
-    )
-    query_embedding = response.data[0].embedding
-    
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=k,
-        include=["documents", "metadatas", "distances"]
-    )
-    
-    return results
+def load_csv_exact(file) -> pd.DataFrame:
+    """Assumes columns: company_name, days_since_2000, Date, Document, URL"""
+    df = pd.read_csv(file)
+    # enforce exact names (case-insensitive remap if needed)
+    lower = {c.lower(): c for c in df.columns}
+    must = ["company_name", "days_since_2000", "date", "document", "url"]
+    missing = [m for m in must if m not in lower]
+    if missing:
+        raise ValueError(f"CSV must have columns: {must}. Missing: {missing}")
+    # normalize
+    df = df.rename(columns={lower["company_name"]: "company_name",
+                            lower["days_since_2000"]: "days_since_2000",
+                            lower["date"]: "Date",
+                            lower["document"]: "Document",
+                            lower["url"]: "URL"})
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    return df[["company_name", "days_since_2000", "Date", "Document", "URL"]]
 
-def rank_by_interest(results):
-    """Rank results by law firm interest level"""
-    documents = results["documents"][0]
-    metadatas = results["metadatas"][0]
-    
-    ranked = []
-    for doc, meta in zip(documents, metadatas):
-        score = sum(1 for keyword in LAW_KEYWORDS if keyword.lower() in doc.lower())
-        
-        date_str = meta.get("date", "")
-        if date_str:
-            if "2024" in date_str or "2025" in date_str:
-                score += 2
-        
-        ranked.append({
-            "score": score,
-            "doc": doc,
-            "meta": meta
+def enrich_with_html(df: pd.DataFrame) -> pd.DataFrame:
+    st.info("Fetching article text from URL column…")
+    prog = st.progress(0.0)
+    got = 0
+    for i, url in enumerate(df["URL"].astype(str).fillna("")):
+        text = html_to_text(url)
+        if text:  # prefer fetched text over CSV's Document
+            df.at[i, "Document"] = text
+            got += 1
+        prog.progress((i + 1) / len(df))
+    st.success(f"Fetched {got}/{len(df)} pages.")
+    # final cleanup
+    df["Document"] = df["Document"].astype(str).map(clean_text)
+    return df
+
+def to_chroma(df: pd.DataFrame, client: OpenAI):
+    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+    col = chroma_client.get_or_create_collection(COLLECTION_NAME)
+    if col.count() > 0:
+        return col
+
+    docs, metas, ids = [], [], []
+    for i, row in df.iterrows():
+        text = (row["Document"] or "").strip()
+        if not text:
+            continue
+        docs.append(text)
+        metas.append({
+            "company_name": str(row["company_name"] or ""),
+            "date": str(row["Date"] or ""),
+            "url": str(row["URL"] or ""),
+            "days_since_2000": int(row["days_since_2000"]) if pd.notna(row["days_since_2000"]) else None,
         })
-    
-    ranked.sort(key=lambda x: x["score"], reverse=True)
-    return ranked
+        ids.append(str(uuid.uuid4()))
 
-# ========== PAGES ==========
+    # embed in small batches
+    embs = []
+    bs = 128
+    for j in range(0, len(docs), bs):
+        resp = client.embeddings.create(model=EMBED_MODEL, input=docs[j:j+bs])
+        embs.extend([d.embedding for d in resp.data])
 
-def chat_page():
-    st.title("📰 News Bot for Law Firms (OpenAI)")
-    
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    
-    # Chat input
-    if prompt := st.chat_input("Ask about the news..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        with st.chat_message("assistant"):
-            collection = st.session_state.collection
-            client = get_openai_client()
-            
-            if "most interesting" in prompt.lower():
-                results = search_news(
-                    collection, 
-                    client, 
-                    "litigation regulation merger acquisition lawsuit compliance",
-                    k=20
-                )
-                ranked = rank_by_interest(results)
-                
-                response = "**Top 10 Most Interesting News:**\n\n"
-                for i, item in enumerate(ranked[:10], 1):
-                    title = item["doc"][:150] + "..."
-                    url = item["meta"].get("url", "")
-                    date = item["meta"].get("date", "")
-                    score = item["score"]
-                    
-                    response += f"{i}. [{title}]({url})\n"
-                    response += f"   *Interest Score: {score} | {date}*\n\n"
-            
-            elif prompt.lower().startswith("find news about"):
-                topic = prompt.replace("find news about", "").strip()
-                
-                results = search_news(collection, client, topic, k=10)
-                
-                response = f"**News about '{topic}':**\n\n"
-                for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0]), 1):
-                    title = doc[:150] + "..."
-                    url = meta.get("url", "")
-                    date = meta.get("date", "")
-                    
-                    response += f"{i}. [{title}]({url})\n"
-                    response += f"   *{date}*\n\n"
-            
-            else:
-                results = search_news(collection, client, prompt, k=5)
-                
-                context = "\n\n".join([
-                    f"Article: {doc[:500]}" 
-                    for doc in results["documents"][0]
-                ])
-                
-                messages = [
-                    {"role": "system", "content": "You are a news assistant for a law firm. Be concise and highlight legal implications."},
-                    {"role": "user", "content": f"Question: {prompt}\n\nContext:\n{context}"}
-                ]
-                
-                completion = client.chat.completions.create(
-                    model=CHAT_MODEL,
-                    messages=messages
-                )
-                response = completion.choices[0].message.content
-            
-            st.markdown(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+    col.add(ids=ids, documents=docs, metadatas=metas, embeddings=embs)
+    return col
 
-def test_page():
-    st.title("🧪 Testing Dashboard (OpenAI)")
-    
-    collection = st.session_state.collection
-    client = get_openai_client()
-    
-    st.header("Test 1: Most Interesting News")
-    if st.button("Run Test 1"):
-        results = search_news(
-            collection, 
-            client, 
-            "litigation regulation merger acquisition lawsuit compliance",
-            k=20
-        )
-        ranked = rank_by_interest(results)
-        
-        st.subheader("Top 5 Results:")
-        for i, item in enumerate(ranked[:5], 1):
-            st.write(f"**{i}. Score: {item['score']}**")
-            st.write(f"Date: {item['meta'].get('date', '')}")
-            st.write(f"Preview: {item['doc'][:100]}...")
-            st.write(f"URL: {item['meta'].get('url', '')}")
-            st.divider()
-        
-        top_5_scores = [item["score"] for item in ranked[:5]]
-        avg_score = sum(top_5_scores) / 5
-        st.metric("Average Score (top 5)", f"{avg_score:.2f}", delta="Target: 3.0+")
-    
-    st.header("Test 2: Specific Topic Search")
-    topics = ["antitrust", "merger", "regulation", "patent"]
-    
-    if st.button("Run Test 2"):
-        for topic in topics:
-            st.subheader(f"Topic: {topic}")
-            results = search_news(collection, client, topic, k=10)
-            
-            documents = results["documents"][0]
-            relevant_count = sum(1 for doc in documents if topic.lower() in doc.lower())
-            precision = relevant_count / 10
-            
-            st.metric(f"Precision", f"{precision*100:.0f}%", delta=f"{relevant_count}/10 relevant")
-            
-            with st.expander("See results"):
-                for i, doc in enumerate(documents[:3], 1):
-                    st.write(f"{i}. {doc[:100]}...")
-    
-    st.header("Test 3: General RAG Questions")
-    questions = [
-        "What are the main legal issues in the news?",
-        "Which companies are facing lawsuits?",
-        "Summarize the merger activity"
-    ]
-    
-    selected_q = st.selectbox("Select question", questions)
-    if st.button("Run Test 3"):
-        results = search_news(collection, client, selected_q, k=5)
-        
-        context = "\n\n".join([
-            f"Article: {doc[:300]}" 
-            for doc in results["documents"][0]
-        ])
-        
-        messages = [
-            {"role": "system", "content": "You are a news assistant for a law firm. Be concise and highlight legal implications."},
-            {"role": "user", "content": f"Question: {selected_q}\n\nContext:\n{context}"}
-        ]
-        
-        completion = client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=messages
-        )
-        answer = completion.choices[0].message.content
-        
-        st.write("**Answer:**")
-        st.write(answer)
-        
-        st.write("**Context Used:**")
-        for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0]), 1):
-            st.write(f"{i}. {meta.get('date')} - {doc[:80]}...")
+def retrieve(col, client: OpenAI, query: str, k: int = 10):
+    q = client.embeddings.create(model=EMBED_MODEL, input=[query]).data[0].embedding
+    return col.query(query_embeddings=[q], n_results=k, include=["documents","metadatas","distances"])
 
-# ========== MAIN APP ==========
+def score_interesting(meta: Dict[str, Any], doc: str) -> float:
+    s = 0.0
+    low = (doc or "").lower()
+    s += sum(1 for k in LAW_KEYWORDS if k in low)
+    # recency bump
+    try:
+        d = pd.to_datetime(meta.get("date"), errors="coerce")
+        if pd.notna(d):
+            days = max(0, (pd.Timestamp.utcnow() - d.tz_localize(None)).days)
+            s += 0.5 * max(0.0, 1.0 - min(days, 365)/365.0)
+    except Exception:
+        pass
+    return s
 
-st.set_page_config(page_title="News Bot (OpenAI)", page_icon="📰", layout="wide")
+def rank_interesting(results) -> List[str]:
+    docs = results.get("documents", [[]])[0]
+    metas = results.get("metadatas", [[]])[0]
+    items = []
+    for doc, meta in zip(docs, metas):
+        items.append((score_interesting(meta, doc), meta, doc))
+    items.sort(key=lambda x: x[0], reverse=True)
+    lines = []
+    for i, (score, meta, doc) in enumerate(items, 1):
+        title = (doc[:180] + "…") if len(doc) > 180 else doc
+        url = meta.get("url") or ""
+        date = meta.get("date") or ""
+        line = f"{i}. **{score:.2f}** — {date} — [{title}]({url})" if url else f"{i}. **{score:.2f}** — {date} — {title}"
+        lines.append(line)
+    return lines[:10]
+def page():
+    # ---------- UI ----------
+    st.set_page_config(page_title="Simple CSV News Bot", page_icon="📰", layout="wide")
+    st.title("📰 Simple CSV News Bot")
 
-# Initialize database
-try:
-    client = get_openai_client()
-    
-    if "collection" not in st.session_state:
-        chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-        collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
-        
-        try:
-            existing_count = collection.count()
-        except:
-            existing_count = 0
-        
-        if existing_count > 0:
-            st.session_state.collection = collection
-            st.success(f"✅ Loaded existing database ({existing_count} documents)")
+    with st.sidebar:
+        csv_file = st.file_uploader("Upload CSV with columns: company_name, days_since_2000, Date, Document, URL", type=["csv"])
+        keep = st.slider("Messages to keep", 1, 5, 3)
+
+    if "msgs" not in st.session_state:
+        st.session_state.msgs = []
+    st.session_state.msgs = st.session_state.msgs[-keep:]
+
+    if csv_file is None:
+        st.info("Upload your CSV to start.")
+        st.stop()
+
+    try:
+        cli = openai_client()
+    except Exception as e:
+        st.error(f"OpenAI error: {e}")
+        st.stop()
+
+    try:
+        df = load_csv_exact(csv_file)
+        df = enrich_with_html(df)
+        col = to_chroma(df, cli)
+        st.success("Index ready ✅")
+    except Exception as e:
+        st.error(f"Data/Index error: {e}")
+        st.stop()
+
+    # replay
+    for m in st.session_state.msgs:
+        with st.chat_message(m["role"]):
+            st.write(m["content"])
+
+    prompt = st.chat_input("Ask: 'find the most interesting news' or 'find news about x' …")
+    if prompt:
+        st.session_state.msgs.append({"role": "user", "content": prompt})
+        low = prompt.strip().lower()
+
+        if "find the most interesting news" in low:
+            res = retrieve(col, cli, "litigation regulation enforcement merger acquisition class action compliance", k=25)
+            lines = rank_interesting(res)
+            ans = "Top interesting items (law-firm context):\n\n" + ("\n\n".join(lines) if lines else "No matches.")
+
+        elif low.startswith("find news about "):
+            topic = prompt[len("find news about "):].strip() or "general"
+            res = retrieve(col, cli, topic, k=12)
+            docs = res.get("documents", [[]])[0]
+            metas = res.get("metadatas", [[]])[0]
+            items = []
+            for d, m in zip(docs, metas):
+                title = (d[:200] + "…") if len(d) > 200 else d
+                date = m.get("date") or ""
+                url = m.get("url") or ""
+                items.append(f"- {date} — [{title}]({url})" if url else f"- {date} — {title}")
+            ans = f"News about **{topic}**:\n\n" + ("\n\n".join(items) if items else "No matches.")
+
         else:
-            articles = load_csv_to_dict()
-            articles = enrich_articles(articles)
-            st.session_state.collection = create_vector_db(articles, client, collection)
-            st.success("✅ Database created and ready!")
-    
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.stop()
+            # generic RAG summary
+            res = retrieve(col, cli, prompt, k=8)
+            docs = res.get("documents", [[]])[0]
+            metas = res.get("metadatas", [[]])[0]
+            ctx = []
+            for d, m in zip(docs, metas):
+                snip = d if len(d) < 700 else d[:700] + "…"
+                date = m.get("date") or ""
+                url = m.get("url") or ""
+                ctx.append(f"[{date}] {snip}\n{('URL: ' + url) if url else ''}".strip())
+            context_text = "\n\n---\n\n".join(ctx) if ctx else "No context."
 
-# Navigation
-page = st.sidebar.radio("Navigation", ["💬 Chat", "🧪 Tests"])
+            msgs = [
+                {"role": "system", "content": "You are a news assistant for a large global law firm. Be concise and risk-aware."},
+                {"role": "user", "content": prompt},
+                {"role": "system", "content": f"Context:\n\n{context_text}"},
+            ]
+            resp = cli.chat.completions.create(model=CHAT_MODEL, temperature=0.2, messages=msgs)
+            ans = resp.choices[0].message.content
 
-if page == "💬 Chat":
-    chat_page()
-else:
-    test_page()
+        st.session_state.msgs.append({"role": "assistant", "content": ans})
+        with st.chat_message("assistant"):
+            st.write(ans)
+
+
+def run():
+    page()
+
+if __name__ == "__main__":
+    run()
+
