@@ -395,10 +395,14 @@ def run_all_tests():
     return None
 
 # ========== MAIN APP ==========
+# ========== MAIN APP ==========
 st.set_page_config(page_title="News Bot (OpenAI/Claude)", page_icon="📰", layout="wide")
 
 try:
     openai_client = get_openai_client()
+    # ✅ FIX: always store the client in session state
+    st.session_state.openai_client = openai_client
+
     if "collection" not in st.session_state:
         chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
         collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
@@ -419,6 +423,7 @@ try:
 except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
+
 
 page_choice = st.sidebar.radio("Navigation", ["💬 Chat", "🧪 Tests (OpenAI)", "🧪 Tests (Claude)"])
 
