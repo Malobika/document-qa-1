@@ -1,16 +1,17 @@
-# === FIXES & TEST PAGES (paste into your main .py) ===
+# === CLEANED MAIN APP (single file) ===
 import os
 import csv
+import re
+import hashlib
+import requests
 import streamlit as st
-import streamlit as st
-st.set_page_config(page_title="News Bot (OpenAI/Claude)", page_icon="📰", layout="wide")
-
+from bs4 import BeautifulSoup
 from anthropic import Anthropic
 from openai import OpenAI
 import chromadb
-import requests
-from bs4 import BeautifulSoup
-import re
+
+# ---- PAGE CONFIG (call exactly once, before any other st.* calls) ----
+st.set_page_config(page_title="News Bot (OpenAI/Claude)", page_icon="📰", layout="wide")
 
 # ========== CONFIG ==========
 CSV_PATH = "./files/Examples.csv"
@@ -27,22 +28,22 @@ LAW_KEYWORDS = [
 # ========== HELPERS ==========
 
 def get_anthropic_client():
-    """Initialize Anthropic client"""
-    api_key = os.getenv("CLAUDE_API_KEY")  # <-- fix: canonical env var + message
+    """Initialize Anthropic client (uses CLAUDE_API_KEY)."""
+    api_key = os.getenv("CLAUDE_API_KEY")  # do not change per user request
     if not api_key:
-        st.error("Set ANTHROPIC_API_KEY environment variable")
+        st.error("Set CLAUDE_API_KEY environment variable")
         st.stop()
     return Anthropic(api_key=api_key)
 
 def get_openai_client():
-    """Initialize OpenAI client for embeddings only"""
+    """Initialize OpenAI client for embeddings only."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         st.error("Set OPENAI_API_KEY environment variable (needed for embeddings)")
         st.stop()
     return OpenAI(api_key=api_key)
 
-def fetch_url_text(url):
+def fetch_url_text(url: str):
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
@@ -78,8 +79,6 @@ def enrich_articles(articles):
         progress_bar.progress((i + 1) / max(1, len(articles)))
     return articles
 
-import hashlib
-
 def _stable_id(url: str, date: str, idx: int) -> str:
     """Deterministic, collision-resistant ID for article chunks."""
     h = hashlib.sha1(f"{url}|{date}|{idx}".encode("utf-8")).hexdigest()
@@ -91,7 +90,8 @@ def create_vector_db(
     collection=None,
     session_key: str = "Lab4_vectorDB",
     chroma_path: str = CHROMA_PATH,
-    collection_name: str = COLLECTION_NAME):
+    collection_name: str = COLLECTION_NAME,
+):
     """
     Create/Populate ChromaDB collection with OpenAI embeddings (CSV/articles only).
     - Uses Streamlit session_state to cache the collection (no PDFs).
@@ -162,7 +162,6 @@ def create_vector_db(
                 ids=batch_ids
             )
         else:
-            # Fallback if using an older Chroma client
             try:
                 col.add(
                     documents=batch_docs,
@@ -171,15 +170,13 @@ def create_vector_db(
                     ids=batch_ids
                 )
             except Exception:
-                # Attempt naive de-dup: skip any IDs that already exist
-                # (Some Chroma builds support get with where docs; keep it simple)
+                # Naive de-dup fallback for older clients
                 pass
 
         progress_bar.progress(min((i + batch_size) / total, 1.0))
 
     st.success(f"✅ Added/updated {total} CSV document(s) in Chroma")
     return col
-
 
 def search_news(collection, openai_client, query, k=10):
     resp = openai_client.embeddings.create(model=EMBED_MODEL, input=[query])
@@ -204,10 +201,9 @@ def rank_by_interest(results):
     ranked.sort(key=lambda x: x["score"], reverse=True)
     return ranked
 
-# ========== MAIN CLAUDE PAGE ==========
+# ========== PAGES ==========
 
 def page():
-   
     st.title("🤖 News Bot for Law Firms ")
     st.caption("Using Claude for chat + OpenAI embeddings")
 
@@ -224,6 +220,10 @@ def page():
             st.session_state.collection = create_vector_db(articles, openai_client)
             st.session_state.openai_client = openai_client
             st.success("✅ Ready!")
+        else:
+            # Ensure client is stored (in case user refreshed mid-session)
+            if "openai_client" not in st.session_state:
+                st.session_state.openai_client = openai_client
 
         collection = st.session_state.collection
         openai_client = st.session_state.openai_client
@@ -287,11 +287,12 @@ def page():
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
-# ========= STREAMLIT TEST PAGES =========
-
 def test_page_openai():
-    # Your existing OpenAI test page (unchanged logic), ensure CHAT_MODEL is an OpenAI model if used here
     st.title("🧪 Testing Dashboard (OpenAI)")
+    if "collection" not in st.session_state:
+        st.warning("Collection not initialized yet. Open the Chat page first.")
+        return
+
     collection = st.session_state.collection
     client = get_openai_client()
 
@@ -333,7 +334,7 @@ def test_page_openai():
 
             st.divider()
 
-            # Test 3 (OpenAI model only if you have a valid chat model; otherwise skip)
+            # Test 3 (OpenAI chat)
             st.header("Test 3: General RAG Questions (OpenAI chat)")
             questions = [
                 "What are the main legal issues in the news?",
@@ -343,7 +344,6 @@ def test_page_openai():
                 st.subheader(f"Q: {q}")
                 results = search_news(collection, client, q, k=5)
                 context = "\n\n".join([f"Article: {(doc or '')[:300]}" for doc in results["documents"][0]])
-                # If you want to keep this, set an OpenAI chat model here:
                 OPENAI_CHAT_MODEL = "gpt-4o-mini"
                 completion = client.chat.completions.create(
                     model=OPENAI_CHAT_MODEL,
@@ -364,8 +364,12 @@ def test_page_openai():
     st.divider()
 
 def test_page_claude():
-    """New: Claude-oriented test page mirroring your OpenAI tests"""
+    """Claude-oriented test page mirroring OpenAI tests."""
     st.title("🧪 Testing Dashboard (Claude)")
+    if "collection" not in st.session_state:
+        st.warning("Collection not initialized yet. Open the Chat page first.")
+        return
+
     collection = st.session_state.collection
     openai_client = get_openai_client()
     claude_client = get_anthropic_client()
@@ -441,18 +445,17 @@ def test_page_claude():
     st.info("Click 'Run All Tests (Claude)' to execute all test suites at once")
     st.divider()
 
-# ========== SIMPLE NAV ==========
-
+# ========== OPTIONAL TEST STUB ==========
 
 def run_all_tests():
-    """Safe stub to avoid NameError when called in __main__.
-    For CLI tests run `pytest -q` instead."""
+    """Safe stub to avoid NameError when called in __main__."""
     return None
 
-# ========== MAIN APP ==========
+# ========== MAIN APP BOOTSTRAP ==========
 
+# Initialize / load collection once on import so pages can rely on it
 try:
-    openai_client = get_openai_client()
+    openai_client_boot = get_openai_client()
     if "collection" not in st.session_state:
         chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
         collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
@@ -467,36 +470,30 @@ try:
         else:
             articles = load_csv_to_dict()
             articles = enrich_articles(articles)
-            st.session_state.collection = create_vector_db(articles, openai_client, collection)
+            st.session_state.collection = create_vector_db(articles, openai_client_boot, collection)
             st.success("✅ Database created and ready!")
+    # store client for later use in page()
+    if "openai_client" not in st.session_state:
+        st.session_state.openai_client = openai_client_boot
 
 except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
 
-
-
+# ========== ROUTER ==========
 
 def run():
-    # Sidebar navigation
     nav = st.sidebar.radio(
         "Navigation",
-        ["💬 Chat", "🧪 Tests (OpenAI)", "🧪 Tests (Claude)"]
+        ["💬 Chat", "🧪 Tests (OpenAI)", "🧪 Tests (Claude)"],
+        key="nav_radio"
     )
 
     if nav == "💬 Chat":
-        # Use chat_page() if you defined it; otherwise fall back to page()
-        try:
-            page()
-        except NameError:
-            page()
-
+        page()
     elif nav == "🧪 Tests (OpenAI)":
-        # Your existing OpenAI test dashboard
-        test_page_openai()  # or test_page_openai() if you split them
-
+        test_page_openai()
     else:
-        # Claude-oriented test dashboard
         test_page_claude()
 
 if __name__ == "__main__":
