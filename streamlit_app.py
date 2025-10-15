@@ -414,7 +414,7 @@ pg = st.navigation(
             st.Page(hw4_run, title="HW4"),
              st.Page(hw5_run, title="HW5"),
            
-             st.Page(hw7c_run,title = "HW7_claude")
+             st.Page(hw7c_run,title = "HW7")
         ]
     },
 )
