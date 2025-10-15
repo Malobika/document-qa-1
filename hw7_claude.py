@@ -43,17 +43,54 @@ def get_openai_client():
         st.stop()
     return OpenAI(api_key=api_key)
 
-def fetch_url_text(url: str):
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
-            text = soup.get_text(separator="\n")
-            text = re.sub(r"\n{3,}", "\n\n", text)
-            return text.strip()[:10000]
-    except Exception:
-        pass
-    return None
+def load_and_enrich_csv(csv_file: str, fetched_col: str = "fetched_data"):
+    """
+    Load CSV, fetch URL content only for rows missing `fetched_data`,
+    and persist results back into the CSV.
+
+    Expects a 'URL' column. Creates `fetched_data` and `fetched_at` if missing.
+    """
+    if not os.path.exists(csv_file):
+        st.error(f"CSV not found at {csv_file}")
+        st.stop()
+
+    df = pd.read_csv(csv_file)
+
+    # Ensure fetched_data column exists (not 'Document')
+    if fetched_col not in df.columns:
+        df[fetched_col] = pd.NA
+
+    # Optional timestamp column
+    if "fetched_at" not in df.columns:
+        df["fetched_at"] = pd.NA
+
+    total = len(df)
+    st.info(f"Loading {total} articles...")
+    progress_bar = st.progress(0)
+
+    updated_rows = 0
+    for idx, row in df.iterrows():
+        url = row.get("URL")
+        existing = row.get(fetched_col)
+
+        # Fetch only if URL present and fetched_data missing/blank
+        if pd.notna(url) and (pd.isna(existing) or (isinstance(existing, str) and existing.strip() == "")):
+            fetched_text = fetch_url_text(str(url))
+            if fetched_text:
+                df.at[idx, fetched_col] = fetched_text
+                df.at[idx, "fetched_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                updated_rows += 1
+
+        progress_bar.progress((idx + 1) / max(1, total))
+
+    if updated_rows > 0:
+        df.to_csv(csv_file, index=False, encoding="utf-8")
+        st.success(f"✅ Fetched content for {updated_rows} rows and saved to {csv_file}")
+    else:
+        st.info("No updates needed — all rows already have fetched data.")
+
+    return df
+
 
 def load_csv_to_dict():
     articles = []
@@ -201,7 +238,7 @@ def page():
                 # ❌ ChromaDB is empty - build from CSV
                 articles = load_csv_to_dict()
                 articles = enrich_articles(articles)
-                st.session_state.collection = create_vector_db(articles, openai_client, collection)
+                st.session_state.collection = create_vector_db(articles, openai_client)
                 st.session_state.openai_client = openai_client
                 st.success("✅ Database created and ready!")
         else:
