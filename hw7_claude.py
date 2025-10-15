@@ -478,6 +478,6 @@ def run():
         test_page_openai()
     else:
         test_page_claude()
-S
+
 if __name__ == "__main__":
     run()
