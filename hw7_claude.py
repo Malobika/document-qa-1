@@ -434,34 +434,6 @@ def run_all_tests():
     """Safe stub to avoid NameError when called in __main__."""
     return None
 
-# ========== MAIN APP BOOTSTRAP ==========
-
-# Initialize / load collection once on import so pages can rely on it
-try:
-    openai_client_boot = get_openai_client()
-    if "collection" not in st.session_state:
-        chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-        collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
-        try:
-            existing_count = collection.count()
-        except Exception:
-            existing_count = 0
-
-        if existing_count > 0:
-            st.session_state.collection = collection
-            st.success(f"✅ Loaded existing database ({existing_count} documents)")
-        else:
-            articles = load_csv_to_dict()
-            articles = enrich_articles(articles)
-            st.session_state.collection = create_vector_db(articles, openai_client_boot, collection)
-            st.success("✅ Database created and ready!")
-    # store client for later use in page()
-    if "openai_client" not in st.session_state:
-        st.session_state.openai_client = openai_client_boot
-
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.stop()
 
 # ========== ROUTER ==========
 
