@@ -206,58 +206,63 @@ def _chunk_into_two(text: str) -> Tuple[str, str]:
     return chunk1_text, chunk2_text
 
 def _ensure_vector_db(openai_client: OpenAI):
-    """
-    Create the persistent Chroma collection if empty.
-    Only builds embeddings from HTML files once; subsequent runs reuse the DB.
-    """
+    """Create ChromaDB collection with OpenAI embeddings"""
     chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
     collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
-
-    # If collection already has vectors, skip building
+    
+    # Check if already populated
     try:
         existing_count = collection.count()
-    except Exception:
+    except:
         existing_count = 0
-
+    
     if existing_count > 0:
+        st.info(f"✅ Loaded existing embeddings ({existing_count} documents)")
         return collection
-
-    html_files = _list_html_files(HTML_FOLDER)
-    if not html_files:
-        st.warning(f"No HTML files found in {HTML_FOLDER}. Please unzip your HTML set there.")
-        return collection
-
-    # Build once
-    with st.status("Building vector DB from HTML files…", expanded=False):
-        for path in html_files:
-            try:
-                with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                    html = f.read()
-                text = _safe_html_to_text(html)
-                c1, c2 = _chunk_into_two(text)
-
-                # Embed the two chunks
-                for i, chunk in enumerate([c1, c2], start=1):
-                    if not chunk:
-                        continue
-                    emb = openai_client.embeddings.create(
-                        model=EMBED_MODEL,
-                        input=chunk
-                    ).data[0].embedding
-
-                    doc_id = f"{os.path.basename(path)}::part{i}"  # stable ID (prevents dup inserts)
-                    meta = {"filename": os.path.basename(path), "part": i}
-
-                    try:
-                        collection.add(documents=[chunk], embeddings=[emb], ids=[doc_id], metadatas=[meta])
-                    except IDAlreadyExistsError:
-                        # Safe-upsert behavior: if someone re-runs a partial build, just skip duplicates
-                        pass
-
-            except Exception as e:
-                st.write(f"⚠️ Skipped {os.path.basename(path)} due to error: {e}")
-
-    st.success("Vector DB created ✅")
+    
+    st.info("Creating embeddings with OpenAI (this only happens once)...")
+    
+    documents = []
+    metadatas = []
+    ids = []
+    
+    for i, article in enumerate(articles):
+        doc_text = article.get("Document", "")
+        if len(doc_text) > 50:
+            documents.append(doc_text)
+            metadatas.append({
+                "company": article.get("company_name", ""),
+                "date": article.get("Date", ""),
+                "url": article.get("URL", "")
+            })
+            ids.append(f"doc_{i}")
+    
+    # Create embeddings in batches using OpenAI
+    batch_size = 100
+    progress_bar = st.progress(0)
+    
+    for i in range(0, len(documents), batch_size):
+        batch_docs = documents[i:i+batch_size]
+        batch_meta = metadatas[i:i+batch_size]
+        batch_ids = ids[i:i+batch_size]
+        
+        # Use OpenAI embeddings
+        response = openai_client.embeddings.create(
+            model=EMBED_MODEL,
+            input=batch_docs
+        )
+        embeddings = [item.embedding for item in response.data]
+        
+        collection.add(
+            documents=batch_docs,
+            metadatas=batch_meta,
+            embeddings=embeddings,
+            ids=batch_ids
+        )
+        
+        progress_bar.progress(min((i + batch_size) / len(documents), 1.0))
+    
+    st.success(f"✅ Created and saved {len(documents)} embeddings to {CHROMA_PATH}")
     return collection
 
 def _retrieve_context(collection, openai_client: OpenAI, query: str, k: int = 4) -> List[dict]:
