@@ -483,18 +483,18 @@ except Exception as e:
 # ========== ROUTER ==========
 
 def run():
-    nav = st.sidebar.radio(
+    nav1 = st.sidebar.radio(
         "Navigation",
         ["💬 Chat", "🧪 Tests (OpenAI)", "🧪 Tests (Claude)"],
         key="nav_radio"
     )
 
-    if nav == "💬 Chat":
+    if nav1 == "💬 Chat":
         page()
-    elif nav == "🧪 Tests (OpenAI)":
+    elif nav1 == "🧪 Tests (OpenAI)":
         test_page_openai()
     else:
         test_page_claude()
-
+S
 if __name__ == "__main__":
     run()
