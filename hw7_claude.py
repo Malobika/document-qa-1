@@ -3,6 +3,8 @@ import os
 import csv
 import re
 import hashlib
+import time
+import pandas as pd
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
@@ -42,6 +44,42 @@ def get_openai_client():
         st.error("Set OPENAI_API_KEY environment variable (needed for embeddings)")
         st.stop()
     return OpenAI(api_key=api_key)
+
+# Required imports (ensure these are at the top of your file)
+import re
+import requests
+from bs4 import BeautifulSoup
+
+def fetch_url_text(url: str, timeout: int = 12, max_chars: int = 10000) -> str | None:
+    """
+    Fetch a URL and return plain text (up to max_chars). 
+    Returns None on error or non-200 status.
+    """
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (news-bot/1.0; +https://example.com)"
+        }
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        text = soup.get_text(separator="\n")
+
+        # Collapse extra blank lines and trim
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+        # Limit size for storage/embeddings
+        if len(text) > max_chars:
+            text = text[:max_chars]
+
+        # Avoid returning empty strings
+        return text if text else None
+
+    except Exception:
+        # Network/parse errors -> None
+        return None
+
 
 def load_and_enrich_csv(csv_file: str, fetched_col: str = "fetched_data"):
     """
