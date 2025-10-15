@@ -25,7 +25,7 @@ LAW_KEYWORDS = [
 
 def get_anthropic_client():
     """Initialize Anthropic client"""
-    api_key = os.getenv("ANTHROPIC_API_KEY")  # <-- fix: canonical env var + message
+    api_key = os.getenv("CLAUDE_API_KEY")  # <-- fix: canonical env var + message
     if not api_key:
         st.error("Set ANTHROPIC_API_KEY environment variable")
         st.stop()
