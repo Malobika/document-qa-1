@@ -2,6 +2,9 @@
 import os
 import csv
 import streamlit as st
+import streamlit as st
+st.set_page_config(page_title="News Bot (OpenAI/Claude)", page_icon="📰", layout="wide")
+
 from anthropic import Anthropic
 from openai import OpenAI
 import chromadb
@@ -472,14 +475,6 @@ except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
 
-page_choice = st.sidebar.radio("Navigation", ["💬 Chat", "🧪 Tests (OpenAI)", "🧪 Tests (Claude)"])
-
-if page_choice == "💬 Chat":
-    page()
-elif page_choice == "🧪 Tests (OpenAI)":
-    test_page_openai()
-else:
-    test_page_claude()
 
 
 
