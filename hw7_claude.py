@@ -207,7 +207,7 @@ def rank_by_interest(results):
 # ========== MAIN CLAUDE PAGE ==========
 
 def page():
-    st.set_page_config(page_title="News Bot", page_icon="🤖")
+   
     st.title("🤖 News Bot for Law Firms ")
     st.caption("Using Claude for chat + OpenAI embeddings")
 
@@ -450,7 +450,6 @@ def run_all_tests():
     return None
 
 # ========== MAIN APP ==========
-st.set_page_config(page_title="News Bot (OpenAI/Claude)", page_icon="📰", layout="wide")
 
 try:
     openai_client = get_openai_client()
