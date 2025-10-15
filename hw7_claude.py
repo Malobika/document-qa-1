@@ -1,4 +1,4 @@
-# === CLEANED MAIN APP (single file) ===
+# === CLEANED MAIN APP (single file) with Cheap/Expensive Model Switch for Claude & OpenAI ===
 import os
 import csv
 import re
@@ -20,7 +20,14 @@ CSV_PATH = "./files/Examples.csv"
 CHROMA_PATH = "./chroma_db_claude"
 COLLECTION_NAME = "news_claude"
 EMBED_MODEL = "text-embedding-3-small"  # Using OpenAI embeddings
-CHAT_MODEL = "claude-3-5-sonnet-20241022"
+
+# Claude defaults
+CLAUDE_MODEL_EXPENSIVE = "claude-3-5-sonnet-20241022"  # keep as-is per your request
+CLAUDE_MODEL_CHEAP     = "claude-3-haiku-20240307"
+
+# OpenAI chat defaults
+OPENAI_MODEL_EXPENSIVE = "gpt-4o"
+OPENAI_MODEL_CHEAP     = "gpt-4o-mini"
 
 LAW_KEYWORDS = [
     "lawsuit", "litigation", "regulation", "antitrust", "merger",
@@ -38,67 +45,36 @@ def get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 def get_openai_client():
-    """Initialize OpenAI client for embeddings only."""
+    """Initialize OpenAI client (embeddings + chat)."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        st.error("Set OPENAI_API_KEY environment variable (needed for embeddings)")
+        st.error("Set OPENAI_API_KEY environment variable (needed for embeddings/chat)")
         st.stop()
     return OpenAI(api_key=api_key)
 
-# Required imports (ensure these are at the top of your file)
-import re
-import requests
-from bs4 import BeautifulSoup
-
 def fetch_url_text(url: str, timeout: int = 12, max_chars: int = 10000) -> str | None:
-    """
-    Fetch a URL and return plain text (up to max_chars). 
-    Returns None on error or non-200 status.
-    """
+    """Fetch a URL and return plain text (up to max_chars). Return None on error."""
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (news-bot/1.0; +https://example.com)"
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (news-bot/1.0; +https://example.com)"}
         resp = requests.get(url, headers=headers, timeout=timeout)
         if resp.status_code != 200:
             return None
-
         soup = BeautifulSoup(resp.text, "html.parser")
         text = soup.get_text(separator="\n")
-
-        # Collapse extra blank lines and trim
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
-
-        # Limit size for storage/embeddings
-        if len(text) > max_chars:
-            text = text[:max_chars]
-
-        # Avoid returning empty strings
-        return text if text else None
-
+        return (text[:max_chars] if len(text) > max_chars else text) or None
     except Exception:
-        # Network/parse errors -> None
         return None
 
-
 def load_and_enrich_csv(csv_file: str, fetched_col: str = "fetched_data"):
-    """
-    Load CSV, fetch URL content only for rows missing `fetched_data`,
-    and persist results back into the CSV.
-
-    Expects a 'URL' column. Creates `fetched_data` and `fetched_at` if missing.
-    """
+    """Optional: fetch and persist article text into the CSV."""
     if not os.path.exists(csv_file):
         st.error(f"CSV not found at {csv_file}")
         st.stop()
 
     df = pd.read_csv(csv_file)
-
-    # Ensure fetched_data column exists (not 'Document')
     if fetched_col not in df.columns:
         df[fetched_col] = pd.NA
-
-    # Optional timestamp column
     if "fetched_at" not in df.columns:
         df["fetched_at"] = pd.NA
 
@@ -110,15 +86,12 @@ def load_and_enrich_csv(csv_file: str, fetched_col: str = "fetched_data"):
     for idx, row in df.iterrows():
         url = row.get("URL")
         existing = row.get(fetched_col)
-
-        # Fetch only if URL present and fetched_data missing/blank
         if pd.notna(url) and (pd.isna(existing) or (isinstance(existing, str) and existing.strip() == "")):
             fetched_text = fetch_url_text(str(url))
             if fetched_text:
                 df.at[idx, fetched_col] = fetched_text
                 df.at[idx, "fetched_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 updated_rows += 1
-
         progress_bar.progress((idx + 1) / max(1, total))
 
     if updated_rows > 0:
@@ -126,9 +99,7 @@ def load_and_enrich_csv(csv_file: str, fetched_col: str = "fetched_data"):
         st.success(f"✅ Fetched content for {updated_rows} rows and saved to {csv_file}")
     else:
         st.info("No updates needed — all rows already have fetched data.")
-
     return df
-
 
 def load_csv_to_dict():
     articles = []
@@ -145,7 +116,6 @@ def load_csv_to_dict():
 def enrich_articles(articles):
     st.info(f"Loading {len(articles)} articles...")
     progress_bar = st.progress(0)
-    
     for i, article in enumerate(articles):
         url = article.get("URL", "")
         if url:
@@ -164,23 +134,17 @@ def create_vector_db(articles, openai_client):
     """Create ChromaDB collection with OpenAI embeddings"""
     chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
     collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
-    
-    # Check if already populated
     try:
         existing_count = collection.count()
-    except:
+    except Exception:
         existing_count = 0
-    
+
     if existing_count > 0:
         st.info(f"✅ Loaded existing embeddings ({existing_count} documents)")
         return collection
-    
+
     st.info("Creating embeddings with OpenAI (this only happens once)...")
-    
-    documents = []
-    metadatas = []
-    ids = []
-    
+    documents, metadatas, ids = [], [], []
     for i, article in enumerate(articles):
         doc_text = article.get("Document", "")
         if len(doc_text) > 50:
@@ -191,35 +155,27 @@ def create_vector_db(articles, openai_client):
                 "url": article.get("URL", "")
             })
             ids.append(f"doc_{i}")
-    
-    # Create embeddings in batches using OpenAI
+
     batch_size = 100
     progress_bar = st.progress(0)
-    
     for i in range(0, len(documents), batch_size):
         batch_docs = documents[i:i+batch_size]
         batch_meta = metadatas[i:i+batch_size]
         batch_ids = ids[i:i+batch_size]
-        
-        # Use OpenAI embeddings
-        response = openai_client.embeddings.create(
-            model=EMBED_MODEL,
-            input=batch_docs
-        )
+
+        response = openai_client.embeddings.create(model=EMBED_MODEL, input=batch_docs)
         embeddings = [item.embedding for item in response.data]
-        
+
         collection.add(
             documents=batch_docs,
             metadatas=batch_meta,
             embeddings=embeddings,
             ids=batch_ids
         )
-        
         progress_bar.progress(min((i + batch_size) / len(documents), 1.0))
-    
+
     st.success(f"✅ Created and saved {len(documents)} embeddings to {CHROMA_PATH}")
     return collection
-
 
 def search_news(collection, openai_client, query, k=10):
     resp = openai_client.embeddings.create(model=EMBED_MODEL, input=[query])
@@ -244,6 +200,46 @@ def rank_by_interest(results):
     ranked.sort(key=lambda x: x["score"], reverse=True)
     return ranked
 
+# ========== MODEL SELECTION (Claude + OpenAI) ==========
+
+def get_selected_claude_model() -> str:
+    return st.session_state.get("CLAUDE_MODEL_SELECTED", CLAUDE_MODEL_EXPENSIVE)
+
+def get_selected_openai_model() -> str:
+    return st.session_state.get("OPENAI_MODEL_SELECTED", OPENAI_MODEL_EXPENSIVE)
+
+def model_selector_sidebar():
+    with st.sidebar.expander("⚙️ Model Settings", expanded=True):
+        # Claude selector
+        claude_choice = st.radio(
+            "Claude chat model",
+            [
+                f"Expensive • {CLAUDE_MODEL_EXPENSIVE}",
+                f"Cheaper • {CLAUDE_MODEL_CHEAP}"
+            ],
+            index=0 if st.session_state.get("CLAUDE_MODEL_SELECTED", CLAUDE_MODEL_EXPENSIVE) == CLAUDE_MODEL_EXPENSIVE else 1,
+            key="model_choice_claude"
+        )
+        st.session_state["CLAUDE_MODEL_SELECTED"] = (
+            CLAUDE_MODEL_EXPENSIVE if "Expensive" in claude_choice else CLAUDE_MODEL_CHEAP
+        )
+        st.caption(f"Claude using: `{st.session_state['CLAUDE_MODEL_SELECTED']}`")
+
+        # OpenAI selector
+        openai_choice = st.radio(
+            "OpenAI chat model",
+            [
+                f"Expensive • {OPENAI_MODEL_EXPENSIVE}",
+                f"Cheaper • {OPENAI_MODEL_CHEAP}"
+            ],
+            index=0 if st.session_state.get("OPENAI_MODEL_SELECTED", OPENAI_MODEL_EXPENSIVE) == OPENAI_MODEL_EXPENSIVE else 1,
+            key="model_choice_openai"
+        )
+        st.session_state["OPENAI_MODEL_SELECTED"] = (
+            OPENAI_MODEL_EXPENSIVE if "Expensive" in openai_choice else OPENAI_MODEL_CHEAP
+        )
+        st.caption(f"OpenAI using: `{st.session_state['OPENAI_MODEL_SELECTED']}`")
+
 # ========== PAGES ==========
 
 def page():
@@ -258,29 +254,24 @@ def page():
         openai_client = get_openai_client()
 
         if "collection" not in st.session_state:
-            # Try to load existing ChromaDB first
             chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
             collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
-            
             try:
                 existing_count = collection.count()
-            except:
+            except Exception:
                 existing_count = 0
-            
+
             if existing_count > 0:
-                # ✅ ChromaDB exists with data - just load it!
                 st.session_state.collection = collection
                 st.session_state.openai_client = openai_client
                 st.success(f"✅ Loaded existing database ({existing_count} documents)")
             else:
-                # ❌ ChromaDB is empty - build from CSV
                 articles = load_csv_to_dict()
                 articles = enrich_articles(articles)
                 st.session_state.collection = create_vector_db(articles, openai_client)
                 st.session_state.openai_client = openai_client
                 st.success("✅ Database created and ready!")
         else:
-            # Collection already in session_state from previous interaction
             if "openai_client" not in st.session_state:
                 st.session_state.openai_client = openai_client
             collection = st.session_state.collection
@@ -331,16 +322,17 @@ def page():
                     response += f"   *{date}*\n\n"
 
             else:
+                # Use the selected Claude model for chat answers
+                selected_model = get_selected_claude_model()
                 results = search_news(collection, openai_client, prompt, k=5)
                 context = "\n\n".join([f"Article: {(doc or '')[:500]}" for doc in results["documents"][0]])
-                # Claude for the answer
-                message = claude_client.messages.create(
-                    model=CHAT_MODEL,
+                msg = claude_client.messages.create(
+                    model=selected_model,
                     max_tokens=1024,
                     system="You are a news assistant for a law firm. Be concise and highlight legal implications.",
                     messages=[{"role": "user", "content": f"Question: {prompt}\n\nContext:\n{context}"}]
                 )
-                response = message.content[0].text
+                response = msg.content[0].text
 
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
@@ -353,6 +345,7 @@ def test_page_openai():
 
     collection = st.session_state.collection
     client = get_openai_client()
+    selected_openai_model = get_selected_openai_model()
 
     if st.button("▶️ Run All Tests", type="primary"):
         with st.spinner("Running all tests..."):
@@ -392,7 +385,7 @@ def test_page_openai():
 
             st.divider()
 
-            # Test 3 (OpenAI chat)
+            # Test 3 (OpenAI chat) — uses selected OpenAI model
             st.header("Test 3: General RAG Questions (OpenAI chat)")
             questions = [
                 "What are the main legal issues in the news?",
@@ -402,13 +395,11 @@ def test_page_openai():
                 st.subheader(f"Q: {q}")
                 results = search_news(collection, client, q, k=5)
                 context = "\n\n".join([f"Article: {(doc or '')[:300]}" for doc in results["documents"][0]])
-                OPENAI_CHAT_MODEL = "gpt-4o-mini"
                 completion = client.chat.completions.create(
-                    model=OPENAI_CHAT_MODEL,
+                    model=selected_openai_model,
                     messages=[
                         {"role": "system", "content": "You are a news assistant for a law firm. Be concise and highlight legal implications."},
-                        {"role": "user", "content": f"Question: {q}\n\nContext:\n{context}"}
-                    ]
+                        {"role": "user", "content": f"Question: {q}\n\nContext:\n{context}"}]
                 )
                 answer = completion.choices[0].message.content
                 st.write("**Answer:**")
@@ -431,6 +422,7 @@ def test_page_claude():
     collection = st.session_state.collection
     openai_client = get_openai_client()
     claude_client = get_anthropic_client()
+    selected_claude_model = get_selected_claude_model()
 
     if st.button("▶️ Run All Tests (Claude)", type="primary"):
         with st.spinner("Running all tests..."):
@@ -470,7 +462,7 @@ def test_page_claude():
 
             st.divider()
 
-            # Test 3 (Claude chat)
+            # Test 3 (Claude chat) — uses selected Claude model
             st.header("Test 3: General RAG Questions (Claude chat)")
             questions = [
                 "What are the main legal issues in the news?",
@@ -483,7 +475,7 @@ def test_page_claude():
                 context = "\n\n".join([f"Article: {(doc or '')[:300]}" for doc in results["documents"][0]])
 
                 msg = claude_client.messages.create(
-                    model=CHAT_MODEL,
+                    model=selected_claude_model,
                     max_tokens=512,
                     system="You are a news assistant for a law firm. Be concise and highlight legal implications.",
                     messages=[{"role": "user", "content": f"Question: {q}\n\nContext:\n{context}"}]
@@ -509,10 +501,13 @@ def run_all_tests():
     """Safe stub to avoid NameError when called in __main__."""
     return None
 
-
 # ========== ROUTER ==========
 
 def run():
+    # Model selectors (cheap vs expensive for both providers)
+    model_selector_sidebar()
+
+    # Navigation
     nav1 = st.sidebar.radio(
         "Navigation",
         ["💬 Chat", "🧪 Tests (OpenAI)", "🧪 Tests (Claude)"],
