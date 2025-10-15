@@ -70,6 +70,7 @@ def load_csv_to_dict():
 def enrich_articles(articles):
     st.info(f"Loading {len(articles)} articles...")
     progress_bar = st.progress(0)
+    
     for i, article in enumerate(articles):
         url = article.get("URL", "")
         if url:
@@ -84,99 +85,66 @@ def _stable_id(url: str, date: str, idx: int) -> str:
     h = hashlib.sha1(f"{url}|{date}|{idx}".encode("utf-8")).hexdigest()
     return f"csv::{h}"
 
-def create_vector_db(
-    articles,
-    openai_client,
-    collection=None,
-    session_key: str = "Lab4_vectorDB",
-    chroma_path: str = CHROMA_PATH,
-    collection_name: str = COLLECTION_NAME,
-):
-    """
-    Create/Populate ChromaDB collection with OpenAI embeddings (CSV/articles only).
-    - Uses Streamlit session_state to cache the collection (no PDFs).
-    - If `collection` is provided, add into it; otherwise create or load a persistent one.
-    - Uses deterministic IDs + upsert to prevent duplicates across reruns.
-    """
-    # ---------- Resolve collection (session -> provided -> persistent) ----------
-    chroma_client = chromadb.PersistentClient(path=chroma_path)
-
-    if session_key in st.session_state and st.session_state[session_key] is not None:
-        col = st.session_state[session_key]
-        # ensure it's valid (in case of hot reloads)
-        try:
-            _ = col.count()
-        except Exception:
-            col = chroma_client.get_or_create_collection(collection_name)
-            st.session_state[session_key] = col
-    elif collection is not None:
-        col = collection
-        st.session_state[session_key] = col
-    else:
-        col = chroma_client.get_or_create_collection(collection_name)
-        st.session_state[session_key] = col
-
-    st.info("Creating embeddings with OpenAI (first-time population or add)…")
-
-    # ---------- Prepare documents ----------
-    documents, metadatas, ids = [], [], []
+def create_vector_db(articles, openai_client):
+    """Create ChromaDB collection with OpenAI embeddings"""
+    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+    collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
+    
+    # Check if already populated
+    try:
+        existing_count = collection.count()
+    except:
+        existing_count = 0
+    
+    if existing_count > 0:
+        st.info(f"✅ Loaded existing embeddings ({existing_count} documents)")
+        return collection
+    
+    st.info("Creating embeddings with OpenAI (this only happens once)...")
+    
+    documents = []
+    metadatas = []
+    ids = []
+    
     for i, article in enumerate(articles):
-        doc_text = (article.get("Document") or "").strip()
-        if len(doc_text) <= 50:
-            continue
-
-        company = article.get("company_name") or article.get("company") or ""
-        date = str(article.get("Date", "") or "")
-        url = str(article.get("URL", "") or "")
-
-        documents.append(doc_text)
-        metadatas.append({"company": company, "date": date, "url": url, "source": "csv"})
-        ids.append(_stable_id(url, date, i))  # deterministic id
-
-    if not documents:
-        st.warning("No documents with sufficient content to embed.")
-        return col
-
-    # ---------- Embed & upsert in batches ----------
+        doc_text = article.get("Document", "")
+        if len(doc_text) > 50:
+            documents.append(doc_text)
+            metadatas.append({
+                "company": article.get("company_name", ""),
+                "date": article.get("Date", ""),
+                "url": article.get("URL", "")
+            })
+            ids.append(f"doc_{i}")
+    
+    # Create embeddings in batches using OpenAI
     batch_size = 100
     progress_bar = st.progress(0)
-    total = len(documents)
-
-    for i in range(0, total, batch_size):
-        batch_docs = documents[i:i + batch_size]
-        batch_meta = metadatas[i:i + batch_size]
-        batch_ids  = ids[i:i + batch_size]
-
-        resp = openai_client.embeddings.create(
+    
+    for i in range(0, len(documents), batch_size):
+        batch_docs = documents[i:i+batch_size]
+        batch_meta = metadatas[i:i+batch_size]
+        batch_ids = ids[i:i+batch_size]
+        
+        # Use OpenAI embeddings
+        response = openai_client.embeddings.create(
             model=EMBED_MODEL,
             input=batch_docs
         )
-        embeddings = [item.embedding for item in resp.data]
+        embeddings = [item.embedding for item in response.data]
+        
+        collection.add(
+            documents=batch_docs,
+            metadatas=batch_meta,
+            embeddings=embeddings,
+            ids=batch_ids
+        )
+        
+        progress_bar.progress(min((i + batch_size) / len(documents), 1.0))
+    
+    st.success(f"✅ Created and saved {len(documents)} embeddings to {CHROMA_PATH}")
+    return collection
 
-        # Prefer upsert to avoid duplicate-id errors on reruns
-        if hasattr(col, "upsert"):
-            col.upsert(
-                documents=batch_docs,
-                metadatas=batch_meta,
-                embeddings=embeddings,
-                ids=batch_ids
-            )
-        else:
-            try:
-                col.add(
-                    documents=batch_docs,
-                    metadatas=batch_meta,
-                    embeddings=embeddings,
-                    ids=batch_ids
-                )
-            except Exception:
-                # Naive de-dup fallback for older clients
-                pass
-
-        progress_bar.progress(min((i + batch_size) / total, 1.0))
-
-    st.success(f"✅ Added/updated {total} CSV document(s) in Chroma")
-    return col
 
 def search_news(collection, openai_client, query, k=10):
     resp = openai_client.embeddings.create(model=EMBED_MODEL, input=[query])
@@ -215,18 +183,33 @@ def page():
         openai_client = get_openai_client()
 
         if "collection" not in st.session_state:
-            articles = load_csv_to_dict()
-            articles = enrich_articles(articles)
-            st.session_state.collection = create_vector_db(articles, openai_client)
-            st.session_state.openai_client = openai_client
-            st.success("✅ Ready!")
+            # Try to load existing ChromaDB first
+            chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+            collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
+            
+            try:
+                existing_count = collection.count()
+            except:
+                existing_count = 0
+            
+            if existing_count > 0:
+                # ✅ ChromaDB exists with data - just load it!
+                st.session_state.collection = collection
+                st.session_state.openai_client = openai_client
+                st.success(f"✅ Loaded existing database ({existing_count} documents)")
+            else:
+                # ❌ ChromaDB is empty - build from CSV
+                articles = load_csv_to_dict()
+                articles = enrich_articles(articles)
+                st.session_state.collection = create_vector_db(articles, openai_client, collection)
+                st.session_state.openai_client = openai_client
+                st.success("✅ Database created and ready!")
         else:
-            # Ensure client is stored (in case user refreshed mid-session)
+            # Collection already in session_state from previous interaction
             if "openai_client" not in st.session_state:
                 st.session_state.openai_client = openai_client
-
-        collection = st.session_state.collection
-        openai_client = st.session_state.openai_client
+            collection = st.session_state.collection
+            openai_client = st.session_state.openai_client
 
     except Exception as e:
         st.error(f"Error: {e}")
