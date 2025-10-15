@@ -152,8 +152,8 @@ def rank_by_interest(results):
 # ========== MAIN CLAUDE PAGE ==========
 
 def page():
-    st.set_page_config(page_title="News Bot (Claude)", page_icon="🤖")
-    st.title("🤖 News Bot for Law Firms (Claude)")
+    st.set_page_config(page_title="News Bot", page_icon="🤖")
+    st.title("🤖 News Bot for Law Firms ")
     st.caption("Using Claude for chat + OpenAI embeddings")
 
     if "messages" not in st.session_state:
