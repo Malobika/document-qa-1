@@ -68,15 +68,11 @@ def enrich_articles(articles):
     return articles
 
 def create_vector_db(articles, client):
-    """Create ChromaDB collection with embeddings"""
+    """Create ChromaDB collection with embeddings - only called when DB is empty"""
     chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
     collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
     
-    
-    if collection.count() > 0:
-        return collection
-    
-    st.info("Creating embeddings...")
+    st.info("Creating embeddings for the first time...")
     
     documents = []
     metadatas = []
@@ -95,6 +91,8 @@ def create_vector_db(articles, client):
     
     # Create embeddings in batches
     batch_size = 100
+    progress_bar = st.progress(0)
+    
     for i in range(0, len(documents), batch_size):
         batch_docs = documents[i:i+batch_size]
         batch_meta = metadatas[i:i+batch_size]
@@ -112,6 +110,8 @@ def create_vector_db(articles, client):
             embeddings=embeddings,
             ids=batch_ids
         )
+        
+        progress_bar.progress(min((i + batch_size) / len(documents), 1.0))
     
     return collection
 

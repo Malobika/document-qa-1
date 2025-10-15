@@ -77,14 +77,11 @@ def enrich_articles(articles):
     return articles
 
 def create_vector_db(articles, openai_client):
-    """Create ChromaDB collection with OpenAI embeddings"""
+    """Create ChromaDB collection with OpenAI embeddings - only called when DB is empty"""
     chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
     collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
     
-    if collection.count() > 0:
-        return collection
-    
-    st.info("Creating embeddings with OpenAI...")
+    st.info("Creating embeddings with OpenAI for the first time...")
     
     documents = []
     metadatas = []
@@ -124,10 +121,9 @@ def create_vector_db(articles, openai_client):
             ids=batch_ids
         )
         
-        progress_bar.progress((i + batch_size) / len(documents))
+        progress_bar.progress(min((i + batch_size) / len(documents), 1.0))
     
     return collection
-
 def search_news(collection, openai_client, query, k=10):
     """Search for relevant news using OpenAI embeddings"""
     response = openai_client.embeddings.create(
