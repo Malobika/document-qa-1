@@ -9,6 +9,7 @@ from hw4 import run as hw4_run
 import hw7 
 import hw5 
 import hw7_claude
+import lab6
 
 import chromadb
 
@@ -401,6 +402,9 @@ def hw5_run():
 def hw7c_run():
     hw7_claude.run()
 
+def lab6():
+    lab6.run()
+
 pg = st.navigation(
     {
         "Labs": [
@@ -408,7 +412,8 @@ pg = st.navigation(
             st.Page(lab1, title="Lab 1"),
             st.Page(lab3, title="Lab 3"),
             st.Page(lab4, title="Lab 4"),
-            st.Page(lab5,title="Lab 5")
+            st.Page(lab5,title="Lab 5"),
+            st.Page(lab6,title="Lab 6")
         ],
         "HWs": [
             st.Page(hw4_run, title="HW4"),

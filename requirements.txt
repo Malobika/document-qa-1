@@ -10,3 +10,31 @@ PyPDF2
 protobuf==3.20
 pysqlite3-binary
 chromadb
+
+
+# Web framework
+streamlit
+
+# Core deps
+PyMuPDF==1.23.5
+beautifulsoup4==4.12.3
+requests==2.32.3
+pandas==2.2.2
+pysqlite3-binary==0.5.3
+blinker==1.8.2
+cachetools==5.5.0
+click==8.1.7
+certifi==2025.8.3
+
+# LLM APIs
+openai
+anthropic
+
+# LangChain (modular ecosystem)
+langchain==0.3.7
+langchain-core==0.3.17
+langchain-community==0.3.3
+langchain-openai==0.2.5
+
+# Vector DB
+chromadb==0.5.5
